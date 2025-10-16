@@ -115,7 +115,7 @@ frontend/
 
 ## 📞 Контакты
 
-- **Сайт**: [tensor-talks.ru](https://tensor-talks.ru)
+- **Сайт**: [tensor-talks.ru](https://www.tensor-talks.ru/)
 - **Email**: contact@tensor-talks.ru
 
 ---
