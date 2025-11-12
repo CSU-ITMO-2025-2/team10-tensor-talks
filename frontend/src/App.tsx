@@ -834,6 +834,9 @@ export default function App() {
             AI-симулятор технических ML-интервью • Революционный подход к подготовке и оценке
           </div>
           <div className="text-sm text-zinc-400">© 2025 TensorTalks</div>
+          <div className="mt-2 text-sm">
+            <Link to="/privacy-policy" className="text-orange-600 hover:underline">Политика конфиденциальности</Link>
+          </div>
         </div>
       </footer>
 

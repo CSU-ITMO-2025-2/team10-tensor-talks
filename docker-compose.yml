@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: user_store_db
+      POSTGRES_USER: user_store
+      POSTGRES_PASSWORD: user_store_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_store -d user_store_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  user-store-service:
+    build:
+      context: ./backend/user-store-service
+    environment:
+      USER_STORE_DATABASE_HOST: postgres
+      USER_STORE_DATABASE_PORT: "5432"
+      USER_STORE_DATABASE_USER: user_store
+      USER_STORE_DATABASE_PASSWORD: user_store_password
+      USER_STORE_DATABASE_NAME: user_store_db
+      USER_STORE_DATABASE_SSL_MODE: disable
+      USER_STORE_SERVER_HOST: "0.0.0.0"
+      USER_STORE_SERVER_PORT: "8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+
+  auth-service:
+    build:
+      context: ./backend/auth-service
+    environment:
+      AUTH_SERVER_HOST: "0.0.0.0"
+      AUTH_SERVER_PORT: "8081"
+      AUTH_USER_STORE_BASE_URL: http://user-store-service:8082
+      AUTH_USER_STORE_TIMEOUT_SECONDS: "5"
+      AUTH_JWT_SECRET: supersecretjwtkey
+      AUTH_JWT_ACCESS_TOKEN_TTL: 15m
+      AUTH_JWT_REFRESH_TOKEN_TTL: 720h
+      AUTH_JWT_ISSUER: tensor-talks-auth
+      AUTH_JWT_AUDIENCE: tensor-talks-services
+    depends_on:
+      user-store-service:
+        condition: service_started
+    ports:
+      - "8081:8081"
+
+  bff-service:
+    build:
+      context: ./backend/bff-service
+    environment:
+      BFF_SERVER_HOST: "0.0.0.0"
+      BFF_SERVER_PORT: "8080"
+      BFF_AUTH_SERVICE_BASE_URL: http://auth-service:8081
+      BFF_AUTH_SERVICE_TIMEOUT_SECONDS: "5"
+      BFF_CORS_ALLOW_ORIGINS: "*"
+      BFF_CORS_ALLOW_HEADERS: Authorization,Content-Type
+    depends_on:
+      auth-service:
+        condition: service_started
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: /api
+    depends_on:
+      bff-service:
+        condition: service_started
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:
+

@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "dev": "cross-env TAILWIND_CONFIG=./config/tailwind.config.js vite --config ./config/vite.config.ts",
+    "build": "tsc -b && cross-env TAILWIND_CONFIG=./config/tailwind.config.js vite build --config ./config/vite.config.ts",
+    "lint": "eslint -c ./config/eslint.config.js src",
+    "preview": "vite preview --config ./config/vite.config.ts"
   },
   "dependencies": {
     "react": "^19.1.1",
@@ -30,6 +30,7 @@
     "tailwindcss": "^4.1.14",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.45.0",
-    "vite": "^7.1.7"
+    "vite": "^7.1.7",
+    "cross-env": "^7.0.3"
   }
 }

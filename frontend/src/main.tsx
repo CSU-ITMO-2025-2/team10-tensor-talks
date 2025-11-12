@@ -7,6 +7,7 @@ import Auth from './pages/Auth.tsx'
 import Dashboard from './pages/Dashboard.tsx'
 import Chat from './pages/Chat.tsx'
 import Results from './pages/Results.tsx'
+import Privacy from './pages/legal/Privacy.tsx'
 
 const router = createHashRouter([
   { path: '/', element: <App /> },
@@ -14,6 +15,7 @@ const router = createHashRouter([
   { path: '/dashboard', element: <Dashboard /> },
   { path: '/chat/:id', element: <Chat /> },
   { path: '/results/:id', element: <Results /> },
+  { path: '/privacy-policy', element: <Privacy /> },
   { path: '*', element: <Navigate to="/" replace /> },
 ])
 
