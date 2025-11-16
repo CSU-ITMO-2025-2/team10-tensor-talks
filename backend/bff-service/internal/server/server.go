@@ -14,12 +14,27 @@ import (
 	"github.com/tensor-talks/bff-service/internal/service"
 )
 
-// Server wraps HTTP server logic.
+/*
+Пакет server отвечает за сборку зависимостей и запуск HTTP-сервера BFF.
+
+Здесь создаются:
+  - HTTP-клиент к auth-service;
+  - сервис аутентификации BFF;
+  - HTTP-обработчики и middleware (CORS);
+  - Gin-роутер с внешним API /api и health-check /healthz.
+*/
+
+// Server инкапсулирует HTTP-сервер BFF.
 type Server struct {
 	httpServer *http.Server
 }
 
-// New constructs server with dependencies.
+// New конструирует HTTP-сервер BFF, инициализируя все зависимости.
+// На этом этапе:
+//   - создаётся HTTP-клиент к auth-service;
+//   - инициализируется сервис аутентификации и HTTP-обработчики;
+//   - навешивается CORS-мидлвара;
+//   - регистрируется health-check и маршруты /api.
 func New(cfg config.Config) (*Server, error) {
 	authClient, err := client.NewAuthClient(cfg.AuthService.BaseURL, cfg.AuthService.TimeoutSeconds)
 	if err != nil {
@@ -45,7 +60,8 @@ func New(cfg config.Config) (*Server, error) {
 	return &Server{httpServer: httpServer}, nil
 }
 
-// Run starts the HTTP server until context cancellation.
+// Run запускает HTTP-сервер и ожидает завершения по контексту или ошибке.
+// При завершении контекста выполняется корректное завершение с таймаутом.
 func (s *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 

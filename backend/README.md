@@ -1,52 +1,106 @@
-## Backend Microservices Overview
+## Обзор backend-микросервисов
 
-This folder hosts the Go microservices that power the TensorTalks platform. The system follows a layered architecture that separates concerns between data persistence, authentication and frontend communication.
+В этой директории находятся Go-микросервисы, обеспечивающие работу платформы TensorTalks.
+Архитектура следует принципам **микросервисного разделения по зонам ответственности**:
+отдельно хранение данных, аутентификация и слой взаимодействия с фронтендом (BFF).
 
-### Services
+### Микросервисы
 
 1. **user-store-service**
-   - Acts as the only service with direct access to the credentials database.
-   - Exposes a CRUD HTTP API for managing users.
-   - Uses Gin for HTTP routing, GORM for PostgreSQL access, Viper for configuration, and Testify for unit tests.
+   - Единственный сервис, имеющий прямой доступ к базе с логинами/паролями.
+   - Предоставляет CRUD HTTP API над таблицей пользователей (создать/прочитать/обновить/удалить).
+   - Реализует отладочный эндпоинт `GET /debug/users` с фильтрами по логину и поддержкой `limit/offset`.
+   - Использует **Gin** (HTTP), **GORM** (PostgreSQL), **Viper** (конфигурация), **Testify** (тесты).
 
 2. **auth-service**
-   - Handles registration, login and JWT issuance/validation.
-   - Relies on the user-store-service to create and fetch users.
-   - Hashes passwords with bcrypt before forwarding them to the store.
+   - Отвечает за регистрацию, логин и работу с JWT (access/refresh токены).
+   - Никогда не ходит в базу напрямую — только через `user-store-service` по HTTP.
+   - Хеширует пароли с помощью **bcrypt** до записи в `user-store-service`.
+   - Выдаёт JWT с GUID пользователя, issuer/audience и ограниченным TTL.
 
 3. **bff-service**
-   - Backend-for-frontend that exposes endpoints consumed by the React application.
-   - Delegates authentication-related requests to the auth-service.
+   - **Backend-for-frontend**, предоставляющий фронтенду стабильное REST API.
+   - Проксирует запросы аутентификации в `auth-service`, скрывая внутреннюю топологию сервисов.
+   - Конфигурирует CORS и не имеет доступа ни к базе данных, ни к `user-store-service` напрямую.
 
-### Database
+### База данных
 
-PostgreSQL stores credential data in a `users` table:
+Данные учётных записей хранятся в PostgreSQL в таблице `users` (создаётся через GORM AutoMigrate):
 
-| Column        | Type      | Notes                               |
-| ------------- | --------- | ----------------------------------- |
-| id            | SERIAL PK | Internal numeric identifier         |
-| external_id   | UUID      | Public GUID used across services    |
-| login         | TEXT      | Unique username                     |
-| password_hash | TEXT      | Bcrypt hash                         |
-| created_at    | TIMESTAMP | Managed by GORM                     |
-| updated_at    | TIMESTAMP | Managed by GORM                     |
+| Колонка      | Тип        | Описание                                                     |
+|--------------|-----------|--------------------------------------------------------------|
+| id           | SERIAL PK | Внутренний числовой идентификатор                            |
+| external_id  | UUID      | Внешний GUID, используемый между микросервисами             |
+| login        | TEXT      | Уникальный логин пользователя                                |
+| password_hash| TEXT      | Хеш пароля (bcrypt), прямой пароль нигде не хранится         |
+| created_at   | TIMESTAMP | Время создания (заполняется GORM)                            |
+| updated_at   | TIMESTAMP | Время обновления (заполняется GORM)                          |
 
-### Configuration
+### Конфигурация
 
-Each service reads configuration via Viper from `config/config.yaml` and environment variables (`SERVICE_*`). Secrets such as JWT signing keys and database passwords should be supplied through environment variables in production.
+Каждый сервис читает конфигурацию через **Viper**:
 
-### Tests
+- файл `config/config.yaml` внутри сервиса;
+- переменные окружения с соответствующим префиксом:
+  - `USER_STORE_...` для `user-store-service`;
+  - `AUTH_...` для `auth-service`;
+  - `BFF_...` для `bff-service`.
 
-Unit tests use Testify for asserting service-specific business logic (password hashing helpers, validation, database adapters via mocks).
+Секреты (JWT-secret, пароли БД и т.п.) в проде должны передаваться только через переменные окружения
+или секреты оркестратора, а не храниться в YAML.
 
-### Containers
+### Контейнеры и оркестрация
 
-- Dockerfiles exist for every service and the frontend.
-- `docker-compose.yml` orchestrates:
-  - React frontend
-  - bff-service
-  - auth-service
-  - user-store-service
-  - PostgreSQL
+- У каждого микросервиса и фронтенда есть свой `Dockerfile`.
+- В корневом `docker-compose.yml` поднимаются:
+  - React-фронтенд (Nginx + статические файлы);
+  - `bff-service` — HTTP-шлюз для фронтенда;
+  - `auth-service` — регистрация/логин/JWT;
+  - `user-store-service` — CRUD над таблицей пользователей;
+  - PostgreSQL с отдельным volume для данных.
 
+### Схема архитектуры backend
 
+```text
+                +-------------------------+
+                |     React Frontend      |
+                |  (браузер пользователя) |
+                +------------+------------+
+                             |
+                             | HTTP /api/...
+                             v
+                    +--------+--------+
+                    |    bff-service  |
+                    |  (Gin, CORS)    |
+                    +--------+--------+
+                             |
+                             | HTTP /auth/...
+                             v
+                    +--------+--------+
+                    |   auth-service  |
+                    | (JWT, bcrypt)   |
+                    +--------+--------+
+                             |
+                             | HTTP /users...
+                             v
+                    +--------+--------+
+                    | user-store-serv |
+                    | (GORM, PG)      |
+                    +--------+--------+
+                             |
+                             | SQL (GORM)
+                             v
+                       +-----+------+
+                       | PostgreSQL |
+                       +------------+
+```
+
+Кратко:
+
+- фронтенд никогда не обращается напрямую к внутренним сервисам — только к `bff-service`;
+- `auth-service` не имеет прямого доступа к PostgreSQL и использует `user-store-service`;
+- `user-store-service` — единственная точка доступа к таблице `users`;
+- все сервисы конфигурируются через Viper и запускаются в отдельных контейнерах.
+
+Подробные схемы и описание каждого сервиса см. в соответствующих `README.md`
+в директориях `auth-service`, `user-store-service`, `bff-service`.

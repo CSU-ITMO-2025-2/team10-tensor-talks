@@ -10,30 +10,47 @@ import (
 	"github.com/tensor-talks/auth-service/internal/config"
 )
 
-// TokenPair represents generated access and refresh tokens.
+/*
+Пакет tokens отвечает за выпуск и валидацию JWT-токенов.
+
+Особенности реализации:
+  - используется HMAC (HS256) с секретом из конфигурации;
+  - выдаются два типа токенов: access (subject = "access") и refresh (subject = "refresh");
+  - в claims помещаются GUID пользователя и его логин.
+
+Все настройки (issuer, audience, TTL, secret) берутся из config.JWTConfig.
+*/
+
+// TokenPair описывает пару сгенерированных access и refresh токенов.
+// Обычно возвращается с ответом на успешную регистрацию или логин и используется
+// фронтендом для хранения сессии и выполнения последующих запросов.
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 }
 
-// Claims extends JWT registered claims with user data.
+// Claims расширяет стандартные JWT claims пользовательскими данными.
+// Эти claims вшиваются как в access-, так и в refresh-токен и позволяют
+// однозначно идентифицировать пользователя по GUID и логину.
 type Claims struct {
 	UserID uuid.UUID `json:"uid"`
 	Login  string    `json:"login"`
 	jwt.RegisteredClaims
 }
 
-// Manager issues and validates JWT tokens.
+// Manager реализует выпуск и валидацию JWT-токенов.
 type Manager struct {
 	cfg config.JWTConfig
 }
 
-// NewManager constructs a Manager.
+// NewManager создаёт новый экземпляр менеджера токенов.
 func NewManager(cfg config.JWTConfig) *Manager {
 	return &Manager{cfg: cfg}
 }
 
-// GenerateTokens builds signed access and refresh tokens for a user.
+// GenerateTokens строит и подписывает пару access/refresh токенов для заданного пользователя.
+// Важно: на вход функция ожидает уже проверенного пользователя, поэтому никакой
+// дополнительной авторизации здесь не выполняется — только формирование JWT.
 func (m *Manager) GenerateTokens(user *client.User) (TokenPair, error) {
 	if user == nil {
 		return TokenPair{}, errors.New("user is nil")
@@ -58,7 +75,11 @@ func (m *Manager) GenerateTokens(user *client.User) (TokenPair, error) {
 	}, nil
 }
 
-// Validate parses and validates a token string.
+// Validate парсит и валидирует строку токена, возвращая claims при успехе.
+// Проверяются:
+//   - корректность подписи по секрету;
+//   - срок действия токена (exp);
+//   - соответствие формату Claims.
 func (m *Manager) Validate(token string) (*Claims, error) {
 	parsed, err := jwt.ParseWithClaims(token, &Claims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -77,6 +98,7 @@ func (m *Manager) Validate(token string) (*Claims, error) {
 	return nil, errors.New("invalid token")
 }
 
+// buildClaims формирует базовый набор claims (issuer, audience, ttl) и данные пользователя.
 func (m *Manager) buildClaims(user *client.User, ttl time.Duration) *Claims {
 	now := time.Now().UTC()
 	return &Claims{
@@ -92,6 +114,7 @@ func (m *Manager) buildClaims(user *client.User, ttl time.Duration) *Claims {
 	}
 }
 
+// sign подписывает переданные claims с использованием алгоритма HS256 и секрета.
 func (m *Manager) sign(claims *Claims) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(m.cfg.Secret))

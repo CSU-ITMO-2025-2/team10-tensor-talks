@@ -17,12 +17,27 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Server wires dependencies and exposes HTTP endpoints.
+/*
+Пакет server собирает зависимости user-store-service и управляет жизненным циклом HTTP-сервера.
+
+Здесь:
+  - инициализируется подключение к PostgreSQL через GORM;
+  - выполняется автоматическая миграция схемы (модель User);
+  - создаются репозиторий, сервис и HTTP-обработчик;
+  - поднимается Gin-сервер с health-check и CRUD/отладочными маршрутами.
+*/
+
+// Server инкапсулирует HTTP-сервер user-store-service.
 type Server struct {
 	httpServer *http.Server
 }
 
-// New builds a new Server instance.
+// New создаёт новый экземпляр Server, настраивая подключение к БД и HTTP-маршруты.
+// Включает:
+//   - установку соединения с PostgreSQL через GORM и логирование SQL-запросов;
+//   - AutoMigrate для модели User (создание/обновление схемы таблицы);
+//   - создание репозитория, сервисного слоя и HTTP-обработчика;
+//   - инициализацию Gin-роутера с health-check и CRUD/отладочными маршрутами.
 func New(cfg config.Config) (*Server, error) {
 	db, err := gorm.Open(postgres.Open(cfg.Database.DSN()), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
@@ -54,7 +69,9 @@ func New(cfg config.Config) (*Server, error) {
 	return &Server{httpServer: httpServer}, nil
 }
 
-// Run starts listening until context is cancelled.
+// Run запускает HTTP-сервер и ожидает завершения по контексту или ошибке.
+// При остановке по контексту выполняет корректное завершение с таймаутом, что
+// позволяет завершить текущие HTTP-запросы.
 func (s *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 

@@ -14,12 +14,26 @@ import (
 	"github.com/tensor-talks/auth-service/internal/tokens"
 )
 
-// Server wraps the HTTP server lifecycle.
+/*
+Пакет server отвечает за "сборку" всех зависимостей auth-service и управление жизненным
+циклом HTTP-сервера (запуск, graceful shutdown).
+
+Внутри:
+  - инициализируется конфигурация, HTTP-клиент user-store, менеджер токенов и сервис аутентификации;
+  - конфигурируется Gin-роутер и health-check;
+  - запускается HTTP-сервер и обрабатывается завершение по контексту.
+*/
+
+// Server инкапсулирует HTTP-сервер и его жизненный цикл.
 type Server struct {
 	httpServer *http.Server
 }
 
-// New constructs the server with dependencies.
+// New создаёт новый экземпляр Server, собирая все зависимости.
+// На этом этапе:
+//   - создаётся HTTP-клиент к user-store-service;
+//   - инициализируется менеджер токенов и сервис аутентификации;
+//   - настраивается Gin-роутер, health-check и HTTP-сервер с таймаутом заголовков.
 func New(cfg config.Config) (*Server, error) {
 	userStoreClient, err := client.NewUserStoreClient(cfg.UserStore)
 	if err != nil {
@@ -45,7 +59,9 @@ func New(cfg config.Config) (*Server, error) {
 	return &Server{httpServer: httpServer}, nil
 }
 
-// Run starts the server until context cancellation.
+// Run запускает HTTP-сервер и блокируется до остановки по контексту или ошибке.
+// При завершении контекста инициирует корректное завершение (`Shutdown`) с таймаутом,
+// чтобы дать активным запросам завершиться.
 func (s *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 

@@ -44,7 +44,52 @@ TensorTalks помогает ML-специалистам и компаниям �
 
 ---
 
-## 🚀 Быстрый старт
+## 🧱 Архитектура и технологии
+
+### Общая схема
+
+- **Frontend (React микросервис)**  
+  Одностраничное приложение на React/TypeScript/Vite, отрисовывающее лендинг, экран аутентификации
+  и пользовательские страницы. Общается только с BFF по HTTP.
+
+- **BFF (bff-service)**  
+  Backend-for-frontend на Go (Gin), который:
+  - предоставляет REST API для фронтенда (`/api/...`);
+  - проксирует запросы аутентификации в `auth-service`;
+  - настраивает CORS и служит единственной точкой входа для браузера.
+
+- **Auth (auth-service)**  
+  Микросервис аутентификации на Go, отвечающий за:
+  - регистрацию и логин по логину/паролю;
+  - выпуск и валидацию JWT (access/refresh);
+  - работу только через `user-store-service` без прямого доступа к БД.
+
+- **User Store (user-store-service)**  
+  Микросервис-хранилище пользователей на Go с PostgreSQL:
+  - единственный сервис с прямым доступом к БД логинов/паролей;
+  - предоставляет CRUD API и отладочный эндпоинт `/debug/users` (фильтр+пагинация);
+  - хранит пользователей с внутренним int PK и внешним GUID (external_id).
+
+- **PostgreSQL**  
+  Хранит таблицу `users` с полями `id`, `external_id` (UUID), `login`, `password_hash`, `created_at`, `updated_at`.
+
+### Стек backend
+
+- Язык: **Go**
+- HTTP: **Gin**
+- ORM: **GORM**
+- Конфигурация: **Viper**
+- Тестирование: **Testify**
+- БД: **PostgreSQL**
+- Контейнеризация: **Docker**, `docker-compose`
+
+Подробные схемы и описание каждого микросервиса см. в `backend/README.md`
+и в отдельных `README.md` внутри `backend/auth-service`, `backend/user-store-service`,
+`backend/bff-service`, а также `frontend/README.md` для фронтенда.
+
+---
+
+## 🚀 Быстрый старт (frontend отдельно)
 
 ```bash
 # Клонируйте репозиторий
@@ -62,19 +107,11 @@ npm run dev
 
 ---
 
-## 🏗️ Технологический стек
+## 🏗️ Технологический стек (кратко)
 
-### Frontend
-- **React 19.1.1** + **TypeScript 5.9.3**
-- **Vite 7.1.7** — быстрый сборщик
-- **Tailwind CSS 4.1.14** — стилизация
-- **React Router 6.30.1** — маршрутизация
-
-### Backend
-*В разработке...*
-
-### AI/ML
-*В разработке...*
+- **Frontend**: React, TypeScript, Vite, Tailwind CSS, React Router.
+- **Backend**: Go (Gin, GORM, Viper, Testify), PostgreSQL.
+- **Инфраструктура**: Docker, docker-compose, Nginx (для фронтенда в контейнере).
 
 ---
 

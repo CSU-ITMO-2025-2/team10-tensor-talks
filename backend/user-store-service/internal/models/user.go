@@ -7,7 +7,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// User describes a registered account stored in PostgreSQL.
+/*
+Пакет models содержит ORM-модели для работы GORM с PostgreSQL.
+
+Основная сущность:
+  - User — учётная запись пользователя с внутренним числовым PK и внешним GUID (ExternalID),
+    который используется другими микросервисами (auth, чат и т.п.).
+*/
+
+// User описывает зарегистрированного пользователя, сохраняемого в PostgreSQL.
 type User struct {
 	ID           uint      `gorm:"primaryKey"`
 	ExternalID   uuid.UUID `gorm:"type:uuid;uniqueIndex"`
@@ -17,7 +25,7 @@ type User struct {
 	UpdatedAt    time.Time
 }
 
-// BeforeCreate fills in defaults where needed.
+// BeforeCreate заполняет ExternalID перед вставкой записи, если он не задан.
 func (u *User) BeforeCreate(tx *gorm.DB) error {
 	if u.ExternalID == uuid.Nil {
 		u.ExternalID = uuid.New()
@@ -25,7 +33,9 @@ func (u *User) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// PublicUser is a sanitized representation safe for returning via APIs.
+// PublicUser — "санитизированное" представление пользователя для ответов API.
+// В текущем варианте сюда попадает и PasswordHash, т.к. этот микросервис
+// не отдаётся напрямую во внешний мир, а используется только auth-service и отладочными инструментами.
 type PublicUser struct {
 	ExternalID   uuid.UUID `json:"id"`
 	Login        string    `json:"login"`
@@ -34,7 +44,7 @@ type PublicUser struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// ToPublic converts database entity to an API friendly struct.
+// ToPublic конвертирует ORM-модель в структуру, пригодную для JSON-ответа.
 func (u User) ToPublic() PublicUser {
 	return PublicUser{
 		ExternalID:   u.ExternalID,

@@ -29,7 +29,8 @@ type DatabaseConfig struct {
 	SSLMode  string `mapstructure:"ssl_mode"`
 }
 
-// DSN builds a GORM-compatible connection string.
+// DSN строит строку подключения к PostgreSQL в формате, совместимом с GORM/pgx.
+// Включает хост, порт, имя пользователя, пароль, имя базы и режим SSL.
 func (c DatabaseConfig) DSN() string {
 	return fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
@@ -42,7 +43,9 @@ func (c DatabaseConfig) DSN() string {
 	)
 }
 
-// Load reads configuration from file and environment variables.
+// Load читает конфигурацию из файла и переменных окружения.
+// При ошибке чтения/разбора конфигурации сервис не запускается, чтобы не работать
+// с потенциально некорректными параметрами подключения к базе.
 func Load() (Config, error) {
 	v := viper.New()
 	v.SetConfigName("config")

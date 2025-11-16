@@ -8,26 +8,39 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config aggregates runtime options.
+/*
+Пакет config отвечает за загрузку и валидацию конфигурации auth-service.
+
+Источник настроек:
+  - YAML-файл `config/config.yaml`;
+  - переменные окружения с префиксом `AUTH_` (имеют приоритет над файлом).
+
+Через конфигурацию настраиваются:
+  - параметры HTTP-сервера;
+  - подключение к user-store-service;
+  - параметры JWT (issuer, audience, TTL, секрет).
+*/
+
+// Config агрегирует все опции рантайма для auth-service.
 type Config struct {
 	Server    ServerConfig    `mapstructure:"server"`
 	UserStore UserStoreConfig `mapstructure:"user_store"`
 	JWT       JWTConfig       `mapstructure:"jwt"`
 }
 
-// ServerConfig defines HTTP server settings.
+// ServerConfig описывает настройки HTTP-сервера.
 type ServerConfig struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"port"`
 }
 
-// UserStoreConfig holds remote service information.
+// UserStoreConfig описывает параметры подключения к user-store-service.
 type UserStoreConfig struct {
 	BaseURL        string `mapstructure:"base_url"`
 	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
 }
 
-// JWTConfig encapsulates token settings.
+// JWTConfig инкапсулирует настройки выпуска JWT-токенов.
 type JWTConfig struct {
 	Issuer          string        `mapstructure:"issuer"`
 	Audience        string        `mapstructure:"audience"`
@@ -39,7 +52,12 @@ type JWTConfig struct {
 	RefreshTokenTTLRaw string `mapstructure:"refresh_token_ttl"`
 }
 
-// Load reads configuration file and environment variables.
+// Load загружает конфигурацию из файла и переменных окружения.
+// Порядок приоритетов:
+//  1. значения из окружения `AUTH_*`,
+//  2. значения из `config/config.yaml`.
+//
+// Здесь же происходит парсинг строковых TTL для токенов и проверка, что секрет задан.
 func Load() (Config, error) {
 	v := viper.New()
 	v.SetConfigName("config")
@@ -71,6 +89,9 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+// parseDurations парсит текстовые значения TTL в тип time.Duration.
+// Ошибки парсинга считаются критическими и приводят к невозможности запуска сервиса,
+// чтобы не допустить работы с неверной конфигурацией безопасности.
 func (j *JWTConfig) parseDurations() error {
 	access, err := time.ParseDuration(j.AccessTokenTTLRaw)
 	if err != nil {

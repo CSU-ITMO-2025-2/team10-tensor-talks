@@ -11,6 +11,9 @@ import (
 )
 
 func main() {
+	// Точка входа в BFF-сервис.
+	// Загружаем конфигурацию, инициализируем HTTP-сервер и настраиваем корректное
+	// завершение по сигналам ОС (SIGINT/SIGTERM).
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("load config: %v", err)

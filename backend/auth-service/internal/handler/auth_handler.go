@@ -11,17 +11,28 @@ import (
 	"github.com/tensor-talks/auth-service/internal/tokens"
 )
 
-// AuthHandler provides HTTP endpoints for authentication workflows.
+/*
+AuthHandler — HTTP-слой микросервиса аутентификации.
+
+Отвечает за:
+  - приём и валидацию входящих запросов (регистрация, логин, обновление токенов, получение информации о себе);
+  - преобразование бизнес-ошибок в корректные HTTP-статусы;
+  - сериализацию/десериализацию JSON.
+
+Бизнес-логика и работа с другими микросервисами инкапсулированы в пакете service.
+*/
+
+// AuthHandler инкапсулирует HTTP-эндпоинты для сценариев аутентификации.
 type AuthHandler struct {
 	svc *service.AuthService
 }
 
-// NewAuthHandler constructs the handler.
+// NewAuthHandler создаёт новый экземпляр HTTP-обработчика для auth-service.
 func NewAuthHandler(svc *service.AuthService) *AuthHandler {
 	return &AuthHandler{svc: svc}
 }
 
-// RegisterRoutes mounts endpoints onto the router.
+// RegisterRoutes регистрирует маршруты auth-сценариев на переданном роутере.
 func (h *AuthHandler) RegisterRoutes(router gin.IRouter) {
 	router.POST("/auth/register", h.Register)
 	router.POST("/auth/login", h.Login)
@@ -48,7 +59,16 @@ type userResponse struct {
 	Login string    `json:"login"`
 }
 
-// Register handles user registration.
+// Register обрабатывает регистрацию нового пользователя.
+// Детали:
+//   - читает JSON `{ "login": "...", "password": "..." }` из тела запроса;
+//   - проводит базовую валидацию через Gin (обязательность полей);
+//   - делегирует валидацию формата логина/пароля и хеширование пароля слою `AuthService`;
+//   - корректно маппит доменные ошибки на HTTP-коды:
+//   - 400 при некорректном вводе,
+//   - 409 при уже занятом логине,
+//   - 500 при внутренних ошибках;
+//   - в случае успеха возвращает 201 с информацией о пользователе и парой токенов.
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req credentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -77,7 +97,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	})
 }
 
-// Login handles user login.
+// Login обрабатывает вход пользователя по логину и паролю.
+// Детали:
+//   - принимает JSON с логином и паролем;
+//   - делегирует проверку существования пользователя, сравнение bcrypt-хеша и пароля в `AuthService`;
+//   - при неверных учётных данных возвращает 401, не раскрывая, существует ли логин;
+//   - при некорректном формате входных данных возвращает 400;
+//   - при успехе возвращает 200 с пользователем и новой парой access/refresh токенов.
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req credentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -104,7 +130,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
-// Refresh issues new tokens based on a refresh token.
+// Refresh принимает refresh-токен и, если он валиден, выдаёт новую пару access/refresh токенов.
+// Ожидает JSON `{ "refresh_token": "<token>" }`. В случае устаревшего или некорректного
+// токена возвращает 401, при внутренних ошибках — 500.
 func (h *AuthHandler) Refresh(c *gin.Context) {
 	var req refreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -129,7 +157,10 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	})
 }
 
-// Me returns information about the current user.
+// Me возвращает информацию о текущем пользователе на основе access-токена из заголовка Authorization.
+// Заголовок должен иметь формат `Authorization: Bearer <access_token>`.
+// Внутри токен валидируется, из него извлекается GUID пользователя, после чего данные
+// запрашиваются у `user-store-service` через `AuthService`.
 func (h *AuthHandler) Me(c *gin.Context) {
 	token := extractBearer(c.GetHeader("Authorization"))
 	if token == "" {
@@ -152,6 +183,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"user": sanitizeUser(user)})
 }
 
+// sanitizeUser отбрасывает чувствительные поля пользователя и формирует DTO для ответа.
 func sanitizeUser(u *client.User) userResponse {
 	return userResponse{
 		ID:    u.ID,
@@ -159,6 +191,7 @@ func sanitizeUser(u *client.User) userResponse {
 	}
 }
 
+// extractBearer вытаскивает значение токена из заголовка Authorization формата "Bearer <token>".
 func extractBearer(header string) string {
 	if header == "" {
 		return ""

@@ -16,7 +16,21 @@ import (
 	"github.com/tensor-talks/auth-service/internal/config"
 )
 
-// User represents a sanitized user returned by the user-store-service.
+/*
+Пакет client реализует HTTP-клиент для взаимодействия auth-service с user-store-service.
+
+Через этот клиент:
+  - создаются пользователи;
+  - запрашивается пользователь по логину;
+  - запрашивается пользователь по внешнему GUID.
+
+Клиент инкапсулирует:
+  - построение URL и HTTP-запросов;
+  - парсинг ответов и ошибок;
+  - настройки таймаутов и транспорта.
+*/
+
+// User описывает "санитизированного" пользователя, возвращаемого user-store-service.
 type User struct {
 	ID           uuid.UUID `json:"id"`
 	Login        string    `json:"login"`
@@ -25,13 +39,13 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// UserStoreClient provides access to the user-store-service API.
+// UserStoreClient предоставляет методы для обращения к HTTP API user-store-service.
 type UserStoreClient struct {
 	baseURL *url.URL
 	client  *http.Client
 }
 
-// APIError represents an error response from the user store.
+// APIError представляет ошибку, возвращённую user-store-service.
 type APIError struct {
 	Status  int
 	Message string
@@ -44,7 +58,9 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("user store api error: status=%d message=%s", e.Status, e.Message)
 }
 
-// NewUserStoreClient builds a client from configuration.
+// NewUserStoreClient создаёт новый клиент user-store на основе конфигурации.
+// Настраивает базовый URL сервиса, таймауты HTTP-клиента и сетевые параметры
+// (таймауты подключения, TLS-handshake и ожидания заголовков ответа).
 func NewUserStoreClient(cfg config.UserStoreConfig) (*UserStoreClient, error) {
 	parsed, err := url.Parse(cfg.BaseURL)
 	if err != nil {
@@ -69,7 +85,9 @@ func NewUserStoreClient(cfg config.UserStoreConfig) (*UserStoreClient, error) {
 	}, nil
 }
 
-// CreateUser creates a new user.
+// CreateUser создаёт нового пользователя в user-store-service.
+// Ожидает уже нормализованный логин и захешированный пароль. При конфликте логина
+// сервер вернёт ошибку APIError со статусом 409.
 func (c *UserStoreClient) CreateUser(ctx context.Context, login, passwordHash string) (*User, error) {
 	payload := map[string]string{
 		"login":         login,
@@ -78,17 +96,23 @@ func (c *UserStoreClient) CreateUser(ctx context.Context, login, passwordHash st
 	return c.doRequest(ctx, http.MethodPost, "/users", payload)
 }
 
-// GetUserByLogin retrieves a user by login.
+// GetUserByLogin возвращает пользователя по логину.
+// Используется auth-service при логине пользователя для получения хеша пароля и GUID.
 func (c *UserStoreClient) GetUserByLogin(ctx context.Context, login string) (*User, error) {
 	endpoint := path.Join("/users/by-login", url.PathEscape(login))
 	return c.doRequest(ctx, http.MethodGet, endpoint, nil)
 }
 
-// GetUserByID retrieves a user by external ID.
+// GetUserByID возвращает пользователя по внешнему GUID.
+// Применяется при выдаче новых токенов и в эндпоинте `/auth/me`, когда по данным
+// из токена нужно получить актуальное состояние пользователя.
 func (c *UserStoreClient) GetUserByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	return c.doRequest(ctx, http.MethodGet, path.Join("/users", id.String()), nil)
 }
 
+// doRequest — вспомогательный метод, который собирает URL, добавляет JSON-тело (если есть),
+// выполняет HTTP-запрос и декодирует ответ в структуру пользователя. При кодах >= 400
+// возвращает APIError с текстом ошибки из тела ответа.
 func (c *UserStoreClient) doRequest(ctx context.Context, method, endpoint string, body any) (*User, error) {
 	u := *c.baseURL
 	u.Path = path.Join(c.baseURL.Path, endpoint)
@@ -131,6 +155,8 @@ func (c *UserStoreClient) doRequest(ctx context.Context, method, endpoint string
 	return &wrapper.User, nil
 }
 
+// extractErrorMessage пытается вытащить поле `error` из JSON-ответа, а если это не удалось,
+// возвращает сырой текст тела ответа для последующей диагностики.
 func extractErrorMessage(body io.Reader) string {
 	var payload struct {
 		Error string `json:"error"`

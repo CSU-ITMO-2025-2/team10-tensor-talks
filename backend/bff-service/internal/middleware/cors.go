@@ -8,7 +8,17 @@ import (
 	"github.com/tensor-talks/bff-service/internal/config"
 )
 
-// NewCORS builds a Gin middleware configured from settings.
+/*
+Пакет middleware содержит общие Gin-мидлвары для BFF.
+
+Сейчас реализован CORS-мидлвар, который конфигурируется из YAML/окружения.
+*/
+
+// NewCORS создаёт CORS-мидлвару Gin на основе настроек CORSConfig.
+// Особенности:
+//   - если список origin пуст, включается режим AllowAllOrigins (удобно для разработки);
+//   - если среди origin есть "*", также включается AllowAllOrigins;
+//   - при пустом списке заголовков по умолчанию разрешаются `Content-Type` и `Authorization`.
 func NewCORS(cfg config.CORSConfig) gin.HandlerFunc {
 	corsCfg := cors.Config{
 		AllowOrigins: cfg.AllowOrigins,

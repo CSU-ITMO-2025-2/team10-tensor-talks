@@ -10,20 +10,32 @@ import (
 	"github.com/tensor-talks/user-store-service/internal/repository"
 )
 
-// ErrInvalidInput signals validation failure.
+// ErrInvalidInput обозначает ошибку валидации входных данных (логин/пароль).
 var ErrInvalidInput = errors.New("invalid input")
 
-// UserService contains user-related business logic.
+// ListFilters описывает параметры фильтрации и пагинации при выборке пользователей.
+type ListFilters struct {
+	// Login позволяет отфильтровать пользователей по подстроке логина (case-insensitive).
+	Login *string
+	// Limit максимальное количество записей в ответе.
+	Limit int
+	// Offset смещение от начала выборки.
+	Offset int
+}
+
+// UserService инкапсулирует бизнес-логику, связанную с пользователями.
 type UserService struct {
 	repo repository.UserRepository
 }
 
-// NewUserService builds a new service instance.
+// NewUserService создаёт новый экземпляр сервиса пользователей.
 func NewUserService(repo repository.UserRepository) *UserService {
 	return &UserService{repo: repo}
 }
 
-// CreateUser persists a new user.
+// CreateUser создаёт нового пользователя в БД на основе логина и хеша пароля.
+// Предполагается, что на этом уровне уже передаётся безопасный хеш (например, bcrypt),
+// а "сырой" пароль никогда не попадает в данный сервис.
 func (s *UserService) CreateUser(ctx context.Context, login, passwordHash string) (*models.User, error) {
 	login = normalizeLogin(login)
 	if err := validateCredentials(login, passwordHash); err != nil {
@@ -42,18 +54,19 @@ func (s *UserService) CreateUser(ctx context.Context, login, passwordHash string
 	return user, nil
 }
 
-// GetByExternalID retrieves a user by GUID.
+// GetByExternalID возвращает пользователя по его внешнему GUID-идентификатору.
 func (s *UserService) GetByExternalID(ctx context.Context, externalID uuid.UUID) (*models.User, error) {
 	return s.repo.GetByExternalID(ctx, externalID)
 }
 
-// GetByLogin fetches a user by login.
+// GetByLogin возвращает пользователя по логину.
 func (s *UserService) GetByLogin(ctx context.Context, login string) (*models.User, error) {
 	login = normalizeLogin(login)
 	return s.repo.GetByLogin(ctx, login)
 }
 
-// UpdateUser overwrites login or password hash.
+// UpdateUser обновляет логин и/или хеш пароля пользователя по его внешнему GUID.
+// Важно: здесь так же ожидается уже захешированный пароль.
 func (s *UserService) UpdateUser(ctx context.Context, externalID uuid.UUID, login, passwordHash *string) (*models.User, error) {
 	user, err := s.repo.GetByExternalID(ctx, externalID)
 	if err != nil {
@@ -82,11 +95,47 @@ func (s *UserService) UpdateUser(ctx context.Context, externalID uuid.UUID, logi
 	return user, nil
 }
 
-// DeleteUser removes a user by GUID.
+// DeleteUser удаляет пользователя по его внешнему GUID.
 func (s *UserService) DeleteUser(ctx context.Context, externalID uuid.UUID) error {
 	return s.repo.Delete(ctx, externalID)
 }
 
+// ListUsers возвращает список пользователей для отладочного API с учётом фильтров.
+// На этом слое дополнительно нормализуем и ограничиваем параметры пагинации:
+//   - выставляем разумный defaultLimit и maxLimit, чтобы защититься от слишком тяжёлых запросов;
+//   - не допускаем отрицательный offset;
+//   - нормализуем фильтр по логину так же, как и в остальных операциях.
+func (s *UserService) ListUsers(ctx context.Context, filters ListFilters) ([]models.User, error) {
+	const (
+		defaultLimit = 50
+		maxLimit     = 200
+	)
+
+	limit := filters.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+	if limit > maxLimit {
+		limit = maxLimit
+	}
+
+	offset := filters.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	var loginFilter *string
+	if filters.Login != nil {
+		normalized := normalizeLogin(*filters.Login)
+		if normalized != "" {
+			loginFilter = &normalized
+		}
+	}
+
+	return s.repo.List(ctx, loginFilter, limit, offset)
+}
+
+// validateCredentials проверяет базовые ограничения на логин и хеш пароля.
 func validateCredentials(login, passwordHash string) error {
 	if login == "" || strings.Contains(login, " ") {
 		return ErrInvalidInput
@@ -97,6 +146,7 @@ func validateCredentials(login, passwordHash string) error {
 	return nil
 }
 
+// normalizeLogin приводит логин к нижнему регистру и убирает лишние пробелы.
 func normalizeLogin(login string) string {
 	return strings.TrimSpace(strings.ToLower(login))
 }

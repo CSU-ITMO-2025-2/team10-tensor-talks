@@ -1,73 +1,73 @@
-# React + TypeScript + Vite
+## Frontend (React микросервис)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Этот каталог содержит фронтенд-микросервис TensorTalks, реализованный на **React + TypeScript + Vite**.
+Фронт выступает отдельным микросервисом, который:
 
-Currently, two official plugins are available:
+- отрисовывает лендинг, форму регистрации/логина и пользовательские страницы;
+- общается только с `bff-service` по HTTP (`/api/...`);
+- не обращается напрямую ни к `auth-service`, ни к `user-store-service`, ни к БД.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Архитектура фронтенда
 
-## React Compiler
+- `src/App.tsx` — публичный лендинг с описанием продукта, CTA и маркетинговыми секциями.
+- `src/pages/Auth.tsx` — страница регистрации/логина:
+  - валидация логина/пароля на клиенте;
+  - запросы к `BFF /api/auth/register` и `/api/auth/login`;
+  - сохранение пользователя и токенов в `localStorage` (ключи `tt_user`, `tt_tokens`).
+- `src/pages/Dashboard.tsx`, `Chat.tsx`, `Results.tsx` — будущие функциональные страницы продукта.
+- `src/services/auth.ts` — тонкий клиент для работы с BFF:
+  - читает `VITE_API_BASE_URL` и формирует базовый URL;
+  - инкапсулирует `fetch` и обработку ошибок.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Схема взаимодействия фронта с backend
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
++-----------------------------+         +------------------+        +------------------+
+|        React Frontend       |  HTTP   |    bff-service   |  HTTP  |   auth-service   |
+|  / (лендинг), /auth, ...    +-------->+  /api/auth/...   +------->+  /auth/...       |
+|  Auth.tsx, auth.ts (client) |         |  CORS, JSON      |        |  JWT, bcrypt     |
++-----------------------------+         +---------+--------+        +---------+--------+
+                                              |                            |
+                                              | HTTP /users...             |
+                                              v                            v
+                                         +----+----------+         +-------+-------+
+                                         | user-store    |  SQL    |  PostgreSQL   |
+                                         |  - users      +-------->+  (таблица     |
+                                         |    (GUID, PW) |         |   users)      |
+                                         +---------------+         +---------------+
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Основные моменты:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- фронтенд никогда не ходит напрямую в `auth-service`/`user-store-service` — только в `bff-service`;
+- после успешной регистрации/логина фронт сохраняет пользователя и токены в `localStorage`,
+  чтобы использовать их в будущих запросах (например, `GET /api/auth/me` для получения текущего пользователя);
+- в будущем при вызове защищённых API фронт будет добавлять заголовок `Authorization: Bearer <access_token>`.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Технологии
+
+- **React** + **TypeScript** — UI и типизация.
+- **Vite** — сборка и dev-сервер.
+- **Tailwind CSS** — быстрая стилизация.
+- **React Router** — маршрутизация между страницами (`/`, `/auth`, `/dashboard`, и т.д.).
+
+### Взаимодействие с backend
+
+- Все запросы идут на BFF (`/api/...` с точки зрения браузера).
+- Примеры:
+  - регистрация: `POST /api/auth/register { login, password }`;
+  - логин: `POST /api/auth/login { login, password }`;
+  - позже: `GET /api/auth/me` для получения текущего пользователя.
+- BFF дальше проксирует запросы в `auth-service`, который уже работает с `user-store-service`.
+
+### Локальный запуск
+
+```bash
+cd frontend
+npm install
+npm run dev
 ```
+
+По умолчанию фронтенд ожидает BFF по пути `/api`. В docker-compose Nginx проксирует запросы
+к BFF автоматически, в режиме разработки можно настроить прокси Vite или запускать BFF локально
+на `http://localhost:8080` и выставить `VITE_API_BASE_URL=http://localhost:8080/api`.
