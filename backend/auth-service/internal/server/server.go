@@ -4,14 +4,18 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tensor-talks/auth-service/internal/client"
 	"github.com/tensor-talks/auth-service/internal/config"
 	"github.com/tensor-talks/auth-service/internal/handler"
 	"github.com/tensor-talks/auth-service/internal/service"
 	"github.com/tensor-talks/auth-service/internal/tokens"
+	"go.uber.org/zap"
 )
 
 /*
@@ -27,6 +31,7 @@ import (
 // Server инкапсулирует HTTP-сервер и его жизненный цикл.
 type Server struct {
 	httpServer *http.Server
+	logger     *zap.Logger
 }
 
 // New создаёт новый экземпляр Server, собирая все зависимости.
@@ -34,7 +39,7 @@ type Server struct {
 //   - создаётся HTTP-клиент к user-store-service;
 //   - инициализируется менеджер токенов и сервис аутентификации;
 //   - настраивается Gin-роутер, health-check и HTTP-сервер с таймаутом заголовков.
-func New(cfg config.Config) (*Server, error) {
+func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
 	userStoreClient, err := client.NewUserStoreClient(cfg.UserStore)
 	if err != nil {
 		return nil, fmt.Errorf("init user store client: %w", err)
@@ -42,12 +47,24 @@ func New(cfg config.Config) (*Server, error) {
 
 	tokenManager := tokens.NewManager(cfg.JWT)
 	authService := service.NewAuthService(userStoreClient, tokenManager)
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthHandler(authService, logger)
 
 	engine := gin.Default()
+
+	// Middleware для логирования
+	engine.Use(loggingMiddleware(logger))
+
+	// Middleware для метрик
+	engine.Use(metricsMiddleware("auth-service"))
+
+	// Health check
 	engine.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+
+	// Metrics endpoint
+	engine.GET("/metrics", metricsHandler())
+
 	authHandler.RegisterRoutes(engine)
 
 	httpServer := &http.Server{
@@ -56,7 +73,7 @@ func New(cfg config.Config) (*Server, error) {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	return &Server{httpServer: httpServer}, nil
+	return &Server{httpServer: httpServer, logger: logger}, nil
 }
 
 // Run запускает HTTP-сервер и блокируется до остановки по контексту или ошибке.
@@ -73,10 +90,106 @@ func (s *Server) Run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		s.logger.Info("Shutting down server")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return s.httpServer.Shutdown(shutdownCtx)
 	case err := <-errCh:
 		return err
+	}
+}
+
+// loggingMiddleware создаёт middleware для логирования HTTP-запросов
+func loggingMiddleware(logger *zap.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		query := c.Request.URL.RawQuery
+
+		c.Next()
+
+		latency := time.Since(start)
+
+		logger.Info("HTTP request",
+			zap.String("method", c.Request.Method),
+			zap.String("path", path),
+			zap.String("query", query),
+			zap.Int("status", c.Writer.Status()),
+			zap.Duration("latency", latency),
+			zap.String("ip", c.ClientIP()),
+			zap.Int("size", c.Writer.Size()),
+		)
+
+		if len(c.Errors) > 0 {
+			for _, err := range c.Errors {
+				logger.Error("Request error",
+					zap.String("method", c.Request.Method),
+					zap.String("path", path),
+					zap.Error(err),
+				)
+			}
+		}
+	}
+}
+
+// HTTP метрики
+var (
+	httpRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tensortalks_http_requests_total",
+			Help: "Total number of HTTP requests",
+		},
+		[]string{"service", "method", "endpoint", "status_code"},
+	)
+
+	httpRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "tensortalks_http_request_duration_seconds",
+			Help:    "HTTP request duration in seconds",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		},
+		[]string{"service", "method", "endpoint"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(httpRequestsTotal)
+	prometheus.MustRegister(httpRequestDuration)
+}
+
+// metricsMiddleware создаёт middleware для сбора HTTP-метрик
+func metricsMiddleware(serviceName string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		path := c.FullPath()
+		if path == "" {
+			path = c.Request.URL.Path
+		}
+
+		c.Next()
+
+		duration := time.Since(start).Seconds()
+		statusCode := strconv.Itoa(c.Writer.Status())
+
+		httpRequestsTotal.WithLabelValues(
+			serviceName,
+			c.Request.Method,
+			path,
+			statusCode,
+		).Inc()
+
+		httpRequestDuration.WithLabelValues(
+			serviceName,
+			c.Request.Method,
+			path,
+		).Observe(duration)
+	}
+}
+
+// metricsHandler возвращает handler для /metrics endpoint
+func metricsHandler() gin.HandlerFunc {
+	h := promhttp.Handler()
+	return func(c *gin.Context) {
+		h.ServeHTTP(c.Writer, c.Request)
 	}
 }

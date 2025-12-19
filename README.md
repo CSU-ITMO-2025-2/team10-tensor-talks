@@ -70,8 +70,24 @@ TensorTalks помогает ML-специалистам и компаниям �
   - предоставляет CRUD API и отладочный эндпоинт `/debug/users` (фильтр+пагинация);
   - хранит пользователей с внутренним int PK и внешним GUID (external_id).
 
+- **Session Service (session-service)**  
+  Микросервис управления сессиями чатов:
+  - создаёт сессии для пользователей;
+  - предоставляет REST API для управления сессиями.
+
+- **Mock Model Service (mock-model-service)**  
+  Заглушка AI-модели для обработки чатов:
+  - читает события из Kafka и генерирует вопросы;
+  - отправляет результаты обратно в Kafka;
+  - использует статичные вопросы по ML.
+
 - **PostgreSQL**  
   Хранит таблицу `users` с полями `id`, `external_id` (UUID), `login`, `password_hash`, `created_at`, `updated_at`.
+
+- **Kafka**  
+  Очереди для асинхронной обработки событий чатов:
+  - `chat.events.out` — события от BFF к модели;
+  - `chat.events.in` — события от модели к BFF.
 
 ### Стек backend
 
@@ -81,11 +97,14 @@ TensorTalks помогает ML-специалистам и компаниям �
 - Конфигурация: **Viper**
 - Тестирование: **Testify**
 - БД: **PostgreSQL**
+- Очереди: **Kafka** (с Zookeeper)
+- Мониторинг: **Prometheus**, **Grafana**, **Loki**
 - Контейнеризация: **Docker**, `docker-compose`
 
 Подробные схемы и описание каждого микросервиса см. в `backend/README.md`
 и в отдельных `README.md` внутри `backend/auth-service`, `backend/user-store-service`,
-`backend/bff-service`, а также `frontend/README.md` для фронтенда.
+`backend/bff-service`, `backend/session-service`, `backend/mock-model-service`, 
+а также `frontend/README.md` для фронтенда.
 
 ---
 
@@ -111,6 +130,8 @@ npm run dev
 
 - **Frontend**: React, TypeScript, Vite, Tailwind CSS, React Router.
 - **Backend**: Go (Gin, GORM, Viper, Testify), PostgreSQL.
+- **Очереди**: Kafka (с Zookeeper) для асинхронной обработки событий.
+- **Мониторинг**: Prometheus (метрики), Grafana (визуализация), Loki (логи), Kafdrop (Kafka UI).
 - **Инфраструктура**: Docker, docker-compose, Nginx (для фронтенда в контейнере).
 
 ---
@@ -136,14 +157,18 @@ frontend/
 ### ✅ Готово
 - [x] Пользовательский интерфейс и навигация
 - [x] Адаптивный дизайн с современными градиентами
-- [x] Демо-функциональность и MVP-уведомления
-- [x] Структура дашборда для обучаемых и HR
+- [x] Backend API и аутентификация (регистрация, логин, JWT)
+- [x] MVP логика чатов (создание сессий, отправка сообщений)
+- [x] Интеграция с Kafka для асинхронной обработки событий
+- [x] Mock AI-модель для обработки чатов
+- [x] Мониторинг (Prometheus, Grafana, Loki)
+- [x] Логирование и метрики во всех микросервисах
 
 ### 🔄 В разработке
-- [ ] AI-интервьюер с естественным диалогом
-- [ ] База вопросов уровня FAANG и топ-стартапов
-- [ ] Система объективной оценки компетенций
-- [ ] Backend API и аутентификация
+- [ ] WebSocket интеграция для real-time обновлений
+- [ ] Хранение истории чатов и сессий
+- [ ] Реальная AI-модель (замена mock-model-service)
+- [ ] Расширенная база вопросов уровня FAANG
 - [ ] Интеграции с HR-системами
 
 **Планируемый запуск**: MVP в 2025 году

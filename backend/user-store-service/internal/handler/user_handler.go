@@ -6,19 +6,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/tensor-talks/user-store-service/internal/metrics"
 	"github.com/tensor-talks/user-store-service/internal/models"
 	"github.com/tensor-talks/user-store-service/internal/repository"
 	"github.com/tensor-talks/user-store-service/internal/service"
+	"go.uber.org/zap"
 )
 
 // UserHandler связывает HTTP-эндпоинты с сервисом пользователей.
 type UserHandler struct {
-	svc *service.UserService
+	svc    *service.UserService
+	logger *zap.Logger
 }
 
 // NewUserHandler создаёт новый экземпляр HTTP-обработчика пользователей.
-func NewUserHandler(svc *service.UserService) *UserHandler {
-	return &UserHandler{svc: svc}
+func NewUserHandler(svc *service.UserService, logger *zap.Logger) *UserHandler {
+	return &UserHandler{svc: svc, logger: logger}
 }
 
 // RegisterRoutes регистрирует маршруты пользовательского API на переданном роутере.
@@ -66,23 +69,33 @@ type listUsersQuery struct {
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req createUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warn("CreateUser: invalid payload", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
 	}
 
+	h.logger.Info("CreateUser request", zap.String("login", req.Login))
 	user, err := h.svc.CreateUser(c.Request.Context(), req.Login, req.PasswordHash)
 	if err != nil {
 		switch err {
 		case service.ErrInvalidInput:
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "create", "error").Inc()
+			h.logger.Warn("CreateUser failed: invalid input", zap.String("login", req.Login), zap.Error(err))
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case repository.ErrDuplicateLogin:
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "create", "error").Inc()
+			h.logger.Warn("CreateUser failed: duplicate login", zap.String("login", req.Login))
 			c.JSON(http.StatusConflict, gin.H{"error": "login already exists"})
 		default:
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "create", "error").Inc()
+			h.logger.Error("CreateUser failed: internal error", zap.Error(err), zap.String("login", req.Login))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		}
 		return
 	}
 
+	metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "create", "success").Inc()
+	h.logger.Info("CreateUser successful", zap.String("user_id", user.ExternalID.String()), zap.String("login", user.Login))
 	c.JSON(http.StatusCreated, gin.H{"user": user.ToPublic()})
 }
 
@@ -92,20 +105,28 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 func (h *UserHandler) GetUserByID(c *gin.Context) {
 	externalID, err := parseUUIDParam(c.Param("id"))
 	if err != nil {
+		h.logger.Warn("GetUserByID: invalid user id", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
 		return
 	}
 
+	h.logger.Info("GetUserByID request", zap.String("user_id", externalID.String()))
 	user, err := h.svc.GetByExternalID(c.Request.Context(), externalID)
 	if err != nil {
 		if err == repository.ErrNotFound {
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "get_by_id", "not_found").Inc()
+			h.logger.Warn("GetUserByID: user not found", zap.String("user_id", externalID.String()))
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		} else {
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "get_by_id", "error").Inc()
+			h.logger.Error("GetUserByID failed: internal error", zap.Error(err), zap.String("user_id", externalID.String()))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		}
 		return
 	}
 
+	metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "get_by_id", "success").Inc()
+	h.logger.Info("GetUserByID successful", zap.String("user_id", externalID.String()))
 	c.JSON(http.StatusOK, gin.H{"user": user.ToPublic()})
 }
 
@@ -114,15 +135,22 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 // используется, в частности, `auth-service` для поиска учётной записи при логине.
 func (h *UserHandler) GetUserByLogin(c *gin.Context) {
 	login := c.Param("login")
+	h.logger.Info("GetUserByLogin request", zap.String("login", login))
 	user, err := h.svc.GetByLogin(c.Request.Context(), login)
 	if err != nil {
 		if err == repository.ErrNotFound {
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "get_by_login", "not_found").Inc()
+			h.logger.Warn("GetUserByLogin: user not found", zap.String("login", login))
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		} else {
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "get_by_login", "error").Inc()
+			h.logger.Error("GetUserByLogin failed: internal error", zap.Error(err), zap.String("login", login))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		}
 		return
 	}
+	metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "get_by_login", "success").Inc()
+	h.logger.Info("GetUserByLogin successful", zap.String("login", login))
 	c.JSON(http.StatusOK, gin.H{"user": user.ToPublic()})
 }
 
@@ -133,36 +161,50 @@ func (h *UserHandler) GetUserByLogin(c *gin.Context) {
 func (h *UserHandler) UpdateUser(c *gin.Context) {
 	externalID, err := parseUUIDParam(c.Param("id"))
 	if err != nil {
+		h.logger.Warn("UpdateUser: invalid user id", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
 		return
 	}
 
 	var req updateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warn("UpdateUser: invalid payload", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
 	}
 
 	if req.Login == nil && req.PasswordHash == nil {
+		h.logger.Warn("UpdateUser: no fields provided")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no fields provided"})
 		return
 	}
 
+	h.logger.Info("UpdateUser request", zap.String("user_id", externalID.String()))
 	user, err := h.svc.UpdateUser(c.Request.Context(), externalID, req.Login, req.PasswordHash)
 	if err != nil {
 		switch err {
 		case service.ErrInvalidInput:
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "update", "error").Inc()
+			h.logger.Warn("UpdateUser failed: invalid input", zap.String("user_id", externalID.String()), zap.Error(err))
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case repository.ErrDuplicateLogin:
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "update", "error").Inc()
+			h.logger.Warn("UpdateUser failed: duplicate login", zap.String("user_id", externalID.String()))
 			c.JSON(http.StatusConflict, gin.H{"error": "login already exists"})
 		case repository.ErrNotFound:
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "update", "not_found").Inc()
+			h.logger.Warn("UpdateUser: user not found", zap.String("user_id", externalID.String()))
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		default:
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "update", "error").Inc()
+			h.logger.Error("UpdateUser failed: internal error", zap.Error(err), zap.String("user_id", externalID.String()))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		}
 		return
 	}
 
+	metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "update", "success").Inc()
+	h.logger.Info("UpdateUser successful", zap.String("user_id", externalID.String()))
 	c.JSON(http.StatusOK, gin.H{"user": user.ToPublic()})
 }
 
@@ -171,19 +213,27 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 func (h *UserHandler) DeleteUser(c *gin.Context) {
 	externalID, err := parseUUIDParam(c.Param("id"))
 	if err != nil {
+		h.logger.Warn("DeleteUser: invalid user id", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
 		return
 	}
 
+	h.logger.Info("DeleteUser request", zap.String("user_id", externalID.String()))
 	if err := h.svc.DeleteUser(c.Request.Context(), externalID); err != nil {
 		if err == repository.ErrNotFound {
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "delete", "not_found").Inc()
+			h.logger.Warn("DeleteUser: user not found", zap.String("user_id", externalID.String()))
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		} else {
+			metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "delete", "error").Inc()
+			h.logger.Error("DeleteUser failed: internal error", zap.Error(err), zap.String("user_id", externalID.String()))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		}
 		return
 	}
 
+	metrics.BusinessUserOperationsTotal.WithLabelValues("user-store-service", "delete", "success").Inc()
+	h.logger.Info("DeleteUser successful", zap.String("user_id", externalID.String()))
 	c.Status(http.StatusNoContent)
 }
 

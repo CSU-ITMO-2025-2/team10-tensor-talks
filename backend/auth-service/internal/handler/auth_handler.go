@@ -7,8 +7,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tensor-talks/auth-service/internal/client"
+	"github.com/tensor-talks/auth-service/internal/metrics"
 	"github.com/tensor-talks/auth-service/internal/service"
 	"github.com/tensor-talks/auth-service/internal/tokens"
+	"go.uber.org/zap"
 )
 
 /*
@@ -24,12 +26,13 @@ AuthHandler — HTTP-слой микросервиса аутентификац�
 
 // AuthHandler инкапсулирует HTTP-эндпоинты для сценариев аутентификации.
 type AuthHandler struct {
-	svc *service.AuthService
+	svc    *service.AuthService
+	logger *zap.Logger
 }
 
 // NewAuthHandler создаёт новый экземпляр HTTP-обработчика для auth-service.
-func NewAuthHandler(svc *service.AuthService) *AuthHandler {
-	return &AuthHandler{svc: svc}
+func NewAuthHandler(svc *service.AuthService, logger *zap.Logger) *AuthHandler {
+	return &AuthHandler{svc: svc, logger: logger}
 }
 
 // RegisterRoutes регистрирует маршруты auth-сценариев на переданном роутере.
@@ -80,16 +83,27 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if err != nil {
 		switch err {
 		case service.ErrInvalidInput:
+			metrics.BusinessRegistrationsTotal.WithLabelValues("auth-service", "error").Inc()
+			h.logger.Warn("Registration failed: invalid input", zap.String("login", req.Login))
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		case service.ErrLoginTaken:
+			metrics.BusinessRegistrationsTotal.WithLabelValues("auth-service", "error").Inc()
+			h.logger.Warn("Registration failed: login taken", zap.String("login", req.Login))
 			c.JSON(http.StatusConflict, gin.H{"error": "login already taken"})
 			return
 		default:
+			metrics.BusinessRegistrationsTotal.WithLabelValues("auth-service", "error").Inc()
+			h.logger.Error("Registration failed: internal error", zap.Error(err), zap.String("login", req.Login))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
 		}
 	}
+
+	metrics.BusinessRegistrationsTotal.WithLabelValues("auth-service", "success").Inc()
+	metrics.BusinessTokensIssuedTotal.WithLabelValues("auth-service", "access").Inc()
+	metrics.BusinessTokensIssuedTotal.WithLabelValues("auth-service", "refresh").Inc()
+	h.logger.Info("User registered successfully", zap.String("user_id", user.ID.String()), zap.String("login", user.Login))
 
 	c.JSON(http.StatusCreated, authResponse{
 		User:   sanitizeUser(user),
@@ -115,14 +129,25 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if err != nil {
 		switch err {
 		case service.ErrInvalidCredentials:
+			metrics.BusinessLoginsTotal.WithLabelValues("auth-service", "error").Inc()
+			h.logger.Warn("Login failed: invalid credentials", zap.String("login", req.Login))
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		case service.ErrInvalidInput:
+			metrics.BusinessLoginsTotal.WithLabelValues("auth-service", "error").Inc()
+			h.logger.Warn("Login failed: invalid input", zap.String("login", req.Login))
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		default:
+			metrics.BusinessLoginsTotal.WithLabelValues("auth-service", "error").Inc()
+			h.logger.Error("Login failed: internal error", zap.Error(err), zap.String("login", req.Login))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		}
 		return
 	}
+
+	metrics.BusinessLoginsTotal.WithLabelValues("auth-service", "success").Inc()
+	metrics.BusinessTokensIssuedTotal.WithLabelValues("auth-service", "access").Inc()
+	metrics.BusinessTokensIssuedTotal.WithLabelValues("auth-service", "refresh").Inc()
+	h.logger.Info("User logged in successfully", zap.String("user_id", user.ID.String()), zap.String("login", user.Login))
 
 	c.JSON(http.StatusOK, authResponse{
 		User:   sanitizeUser(user),
@@ -144,12 +169,20 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	if err != nil {
 		switch err {
 		case service.ErrInvalidToken:
+			metrics.BusinessTokenValidationErrorsTotal.WithLabelValues("auth-service", "invalid").Inc()
+			h.logger.Warn("Token refresh failed: invalid token")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 		default:
+			metrics.BusinessTokenValidationErrorsTotal.WithLabelValues("auth-service", "error").Inc()
+			h.logger.Error("Token refresh failed: internal error", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		}
 		return
 	}
+
+	metrics.BusinessTokensIssuedTotal.WithLabelValues("auth-service", "access").Inc()
+	metrics.BusinessTokensIssuedTotal.WithLabelValues("auth-service", "refresh").Inc()
+	h.logger.Info("Tokens refreshed successfully", zap.String("user_id", user.ID.String()))
 
 	c.JSON(http.StatusOK, authResponse{
 		User:   sanitizeUser(user),
@@ -170,16 +203,20 @@ func (h *AuthHandler) Me(c *gin.Context) {
 
 	claims, err := h.svc.ValidateToken(token)
 	if err != nil {
+		metrics.BusinessTokenValidationErrorsTotal.WithLabelValues("auth-service", "invalid").Inc()
+		h.logger.Warn("Token validation failed: invalid token")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 		return
 	}
 
 	user, err := h.svc.GetUserByID(c.Request.Context(), claims.UserID)
 	if err != nil {
+		h.logger.Error("Failed to fetch user", zap.Error(err), zap.String("user_id", claims.UserID.String()))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user"})
 		return
 	}
 
+	h.logger.Info("User info retrieved", zap.String("user_id", user.ID.String()))
 	c.JSON(http.StatusOK, gin.H{"user": sanitizeUser(user)})
 }
 

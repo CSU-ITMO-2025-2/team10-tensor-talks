@@ -6,6 +6,16 @@ auth_service:
   base_url: "http://auth-service:8081"
   timeout_seconds: 5
 
+session_service:
+  base_url: "http://session-service:8083"
+  timeout_seconds: 5
+
+kafka:
+  brokers: "kafka:9092"
+  topic_chat_out: "chat.events.out"
+  topic_chat_in: "chat.events.in"
+  consumer_group: "bff-service-group"
+
 cors:
   allow_origins:
     - "http://localhost:5173"

@@ -1,0 +1,13 @@
+server:
+  host: "0.0.0.0"
+  port: 8084
+
+kafka:
+  brokers: "kafka:9092"
+  topic_chat_out: "chat.events.out"
+  topic_chat_in: "chat.events.in"
+  consumer_group: "mock-model-service-group"
+
+model:
+  max_questions: 5
+  question_delay_seconds: 2

@@ -1,6 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
+import type { MouseEvent } from 'react'
 import MVPNotification from '../components/MVPNotification'
+import { startChat } from '../services/chat'
 
 function Card({ children }: { children: React.ReactNode }) {
   return <div className="bg-white rounded-xl border border-orange-100 shadow-soft p-5">{children}</div>
@@ -11,8 +13,64 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'learner' | 'hr'>('learner')
   const [showMVPPopup, setShowMVPPopup] = useState(false)
   
-  const handleFeatureClick = () => {
+  const handleFeatureClick = (e?: MouseEvent) => {
+    e?.preventDefault()
+    e?.stopPropagation()
+    console.log('handleFeatureClick called - this should NOT be called for "Начать новое интервью" button')
     setShowMVPPopup(true)
+  }
+
+  const handleStartInterview = async (e?: MouseEvent) => {
+    console.log('handleStartInterview called', e)
+    e?.preventDefault()
+    e?.stopPropagation()
+    
+    // КРИТИЧНО: Убеждаемся, что MVPNotification не показывается
+    // Делаем это синхронно, до любых асинхронных операций
+    setShowMVPPopup(false)
+    console.log('MVP popup closed, showMVPPopup should be false now')
+    
+    // Дополнительная проверка через setTimeout для гарантии
+    setTimeout(() => {
+      setShowMVPPopup(false)
+    }, 0)
+    
+    const userStr = localStorage.getItem('tt_user')
+    console.log('User from localStorage:', userStr ? 'exists' : 'not found')
+    
+    if (!userStr) {
+      console.log('No user, navigating to auth')
+      navigate('/auth')
+      return
+    }
+
+    try {
+      const user = JSON.parse(userStr)
+      console.log('Parsed user:', user)
+      
+      if (!user || !user.id) {
+        console.error('Invalid user data:', user)
+        alert('Ошибка: пользователь не найден. Пожалуйста, войдите снова.')
+        navigate('/auth')
+        return
+      }
+
+      console.log('Starting chat for user:', user.id)
+      const response = await startChat(user.id)
+      console.log('Chat started, response:', response)
+      
+      if (response && response.session_id) {
+        console.log('Navigating to chat:', `/chat/${response.session_id}`)
+        navigate(`/chat/${response.session_id}`)
+      } else {
+        console.error('Invalid response:', response)
+        alert('Ошибка: неверный ответ от сервера')
+      }
+    } catch (error: any) {
+      console.error('Failed to start interview:', error)
+      const errorMessage = error?.message || 'Не удалось начать интервью. Попробуйте еще раз.'
+      alert(errorMessage)
+    }
   }
   
   const interviews = [
@@ -128,7 +186,21 @@ export default function Dashboard() {
           <section className="grid gap-6">
             {/* Быстрые действия */}
             <div className="flex flex-wrap gap-3">
-              <button onClick={handleFeatureClick} className="px-4 py-2 rounded-lg bg-gradient-to-r from-orange-600 to-rose-600 text-white hover:from-orange-700 hover:to-rose-700">
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  console.log('=== BUTTON CLICKED ===')
+                  console.log('Event:', e)
+                  console.log('Calling handleStartInterview')
+                  setShowMVPPopup(false)
+                  handleStartInterview(e).catch(err => {
+                    console.error('Error in handleStartInterview:', err)
+                  })
+                }} 
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-orange-600 to-rose-600 text-white hover:from-orange-700 hover:to-rose-700"
+              >
                 Начать новое интервью
               </button>
               <button onClick={handleFeatureClick} className="px-4 py-2 rounded-lg border border-orange-200 hover:bg-orange-50">

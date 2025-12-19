@@ -23,9 +23,11 @@ import (
 // Config агрегирует все опции конфигурации BFF.
 // Используется на этапе старта сервиса для настройки HTTP-сервера, CORS и клиента auth-service.
 type Config struct {
-	Server      ServerConfig      `mapstructure:"server"`
-	AuthService AuthServiceConfig `mapstructure:"auth_service"`
-	CORS        CORSConfig        `mapstructure:"cors"`
+	Server         ServerConfig         `mapstructure:"server"`
+	AuthService    AuthServiceConfig    `mapstructure:"auth_service"`
+	SessionService SessionServiceConfig `mapstructure:"session_service"`
+	Kafka          KafkaConfig          `mapstructure:"kafka"`
+	CORS           CORSConfig           `mapstructure:"cors"`
 }
 
 // ServerConfig описывает настройки HTTP-сервера BFF.
@@ -38,6 +40,20 @@ type ServerConfig struct {
 type AuthServiceConfig struct {
 	BaseURL        string `mapstructure:"base_url"`
 	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
+}
+
+// SessionServiceConfig содержит параметры подключения к session-service.
+type SessionServiceConfig struct {
+	BaseURL        string `mapstructure:"base_url"`
+	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
+}
+
+// KafkaConfig содержит параметры подключения к Kafka.
+type KafkaConfig struct {
+	Brokers       []string `mapstructure:"brokers"`
+	TopicChatOut  string   `mapstructure:"topic_chat_out"`
+	TopicChatIn   string   `mapstructure:"topic_chat_in"`
+	ConsumerGroup string   `mapstructure:"consumer_group"`
 }
 
 // CORSConfig описывает настройки CORS.
@@ -74,6 +90,25 @@ func Load() (Config, error) {
 
 	cfg.CORS.AllowOrigins = v.GetStringSlice("cors.allow_origins")
 	cfg.CORS.AllowHeaders = v.GetStringSlice("cors.allow_headers")
+
+	// Парсим Kafka brokers из строки или массива
+	// Сначала пробуем получить как строку (из переменной окружения)
+	if brokersStr := v.GetString("kafka.brokers"); brokersStr != "" {
+		// Разделяем по запятой, если это строка с несколькими брокерами
+		cfg.Kafka.Brokers = strings.Split(brokersStr, ",")
+		// Убираем пробелы
+		for i, broker := range cfg.Kafka.Brokers {
+			cfg.Kafka.Brokers[i] = strings.TrimSpace(broker)
+		}
+	} else {
+		// Если не строка, пробуем получить как массив
+		cfg.Kafka.Brokers = v.GetStringSlice("kafka.brokers")
+	}
+
+	// Если brokers все еще пустой, используем значение по умолчанию
+	if len(cfg.Kafka.Brokers) == 0 {
+		cfg.Kafka.Brokers = []string{"kafka:9092"}
+	}
 
 	return cfg, nil
 }

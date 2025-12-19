@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"log"
 	"os/signal"
 	"syscall"
 
 	"github.com/tensor-talks/auth-service/internal/config"
 	"github.com/tensor-talks/auth-service/internal/server"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
@@ -16,22 +17,55 @@ func main() {
 	// корректное завершение по сигналам ОС (SIGINT/SIGTERM).
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		zap.L().Fatal("Failed to load config", zap.Error(err))
 	}
 
-	srv, err := server.New(cfg)
+	// Инициализируем логгер
+	logger := initLogger("auth-service", "1.0.0")
+	defer logger.Sync()
+
+	srv, err := server.New(cfg, logger)
 	if err != nil {
-		log.Fatalf("init server: %v", err)
+		logger.Fatal("Failed to initialize server", zap.Error(err))
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	log.Printf("auth-service listening on %s:%d", cfg.Server.Host, cfg.Server.Port)
+	logger.Info("Service starting",
+		zap.String("host", cfg.Server.Host),
+		zap.Int("port", cfg.Server.Port),
+	)
 
 	if err := srv.Run(ctx); err != nil {
-		log.Fatalf("server error: %v", err)
+		logger.Fatal("Server error", zap.Error(err))
 	}
 
-	log.Println("auth-service stopped gracefully")
+	logger.Info("Service stopped gracefully")
+}
+
+// initLogger создаёт логгер с единым форматом для микросервиса
+func initLogger(serviceName, version string) *zap.Logger {
+	config := zap.NewProductionConfig()
+	config.OutputPaths = []string{"stdout"}
+	config.ErrorOutputPaths = []string{"stdout"}
+	config.EncoderConfig.TimeKey = "timestamp"
+	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	config.EncoderConfig.MessageKey = "message"
+	config.EncoderConfig.LevelKey = "level"
+	config.EncoderConfig.CallerKey = "caller"
+
+	logger, err := config.Build(
+		zap.AddCaller(),
+		zap.AddStacktrace(zapcore.ErrorLevel),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	return logger.With(
+		zap.String("service", serviceName),
+		zap.String("version", version),
+		zap.String("environment", "production"),
+	)
 }

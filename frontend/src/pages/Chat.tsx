@@ -1,68 +1,250 @@
-import { Link, useParams } from 'react-router-dom'
-import { useState } from 'react'
-import MVPNotification from '../components/MVPNotification'
+import { Link, useParams, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { sendMessage, startChat, getNextQuestion, getResults, type ResultsResponse } from '../services/chat'
+
+interface Message {
+  id: string
+  type: 'question' | 'answer' | 'user'
+  content: string
+  timestamp: string
+}
 
 export default function Chat() {
   const { id } = useParams()
-  const [showMVPPopup, setShowMVPPopup] = useState(false)
-  
-  const handleFeatureClick = () => {
-    setShowMVPPopup(true)
+  const navigate = useNavigate()
+  const [messages, setMessages] = useState<Message[]>([])
+  const [inputValue, setInputValue] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(id || null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [chatCompleted, setChatCompleted] = useState(false)
+  const [results, setResults] = useState<ResultsResponse | null>(null)
+  const pollingIntervalRef = useRef<number | null>(null)
+
+  const startPolling = useCallback(() => {
+    if (!sessionId || chatCompleted) return
+
+    // Очищаем предыдущий интервал если есть
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+    }
+
+    // Polling каждые 1 секунду для получения вопросов
+    pollingIntervalRef.current = window.setInterval(async () => {
+      const currentSessionId = sessionId
+      if (!currentSessionId || chatCompleted) {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current)
+        }
+        return
+      }
+
+      try {
+        // Проверяем результаты чата
+        const chatResults = await getResults(currentSessionId)
+        if (chatResults) {
+          setChatCompleted(true)
+          setResults(chatResults)
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+          }
+          return
+        }
+
+        // Получаем следующий вопрос
+        const question = await getNextQuestion(currentSessionId)
+        if (question) {
+          const questionMessage: Message = {
+            id: question.question_id,
+            type: 'question',
+            content: question.question,
+            timestamp: question.timestamp,
+          }
+          setMessages((prev) => {
+            // Проверяем, нет ли уже такого вопроса
+            if (prev.some(m => m.id === question.question_id)) {
+              return prev
+            }
+            return [...prev, questionMessage]
+          })
+          setIsLoading(false)
+        }
+      } catch (error) {
+        console.error('Polling error:', error)
+      }
+    }, 1000)
+  }, [sessionId, chatCompleted])
+
+  useEffect(() => {
+    // Получаем user_id из localStorage
+    const userStr = localStorage.getItem('tt_user')
+    if (!userStr) {
+      navigate('/auth')
+      return
+    }
+
+    const user = JSON.parse(userStr)
+    setUserId(user.id)
+
+    // Если сессии нет, создаём новую
+    if (!sessionId) {
+      startNewChat(user.id)
+    } else {
+      // Запускаем polling для получения вопросов
+      startPolling()
+    }
+
+    return () => {
+      // Очищаем polling при размонтировании
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+      }
+    }
+  }, [sessionId, navigate, startPolling])
+
+  const startNewChat = async (userId: string) => {
+    try {
+      setIsLoading(true)
+      const response = await startChat(userId)
+      setSessionId(response.session_id)
+      navigate(`/chat/${response.session_id}`, { replace: true })
+      // Запускаем polling после создания сессии
+      setTimeout(() => startPolling(), 1000)
+    } catch (error) {
+      console.error('Failed to start chat:', error)
+      alert('Не удалось начать чат. Попробуйте еще раз.')
+    } finally {
+      setIsLoading(false)
+    }
   }
-  const items = [
-    { q: 'Объясните разницу между L1 и L2 регуляризацией.', a: 'L1 ведет к разреженности весов, L2 — к их уменьшению. L1 добавляет |w|, L2 — w^2 к функции потерь.' },
-    { q: 'Как работает кросс‑валидация k-fold?', a: 'Данные делятся на k фолдов, обучаемся на k-1 и валидируем на оставшемся; повторяем и усредняем.' },
-    { q: 'Фрагмент кода: вычисление ROC‑AUC', a: 'См. пример ниже.' },
-  ]
+
+  const handleSend = async () => {
+    if (!inputValue.trim() || !sessionId || !userId || isLoading || chatCompleted) return
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: inputValue,
+      timestamp: new Date().toISOString(),
+    }
+
+    setMessages((prev) => [...prev, userMessage])
+    setInputValue('')
+    setIsLoading(true)
+
+    try {
+      await sendMessage(sessionId, userId, inputValue)
+      // Polling автоматически получит следующий вопрос или результаты
+    } catch (error) {
+      console.error('Failed to send message:', error)
+      alert('Не удалось отправить сообщение. Попробуйте еще раз.')
+      setIsLoading(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
-      <MVPNotification isOpen={showMVPPopup} onClose={() => setShowMVPPopup(false)} />
       <header className="border-b border-orange-100 bg-white/70 backdrop-blur">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link to="/dashboard" className="text-sm text-orange-600 hover:underline">← К дашборду</Link>
-          <div className="font-semibold">Сессия: {id}</div>
+          <Link to="/dashboard" className="text-sm text-orange-600 hover:underline">
+            ← К дашборду
+          </Link>
+          <div className="font-semibold">
+            {sessionId ? `Сессия: ${sessionId.substring(0, 8)}...` : 'Создание сессии...'}
+          </div>
         </div>
       </header>
       <main className="max-w-4xl mx-auto px-4 py-8 grid gap-4">
-        <div className="bg-white rounded-xl border border-orange-100 p-4">
+        <div className="bg-white rounded-xl border border-orange-100 p-4 min-h-[400px] max-h-[600px] overflow-y-auto">
           <div className="text-sm text-zinc-500 mb-2">Чат с AI‑интервьюером</div>
           <div className="space-y-4">
-            {items.map((m, i) => (
-              <div key={i} className="grid gap-2">
-                <div className="self-start max-w-[80%] rounded-2xl px-4 py-2 bg-orange-100 text-zinc-900">Вопрос: {m.q}</div>
-                <div className="self-start max-w-[80%] rounded-2xl px-4 py-2 bg-white border border-orange-100 shadow-soft">Ответ: {m.a}</div>
+            {messages.length === 0 && !isLoading && !chatCompleted && (
+              <div className="text-center text-zinc-400 py-8">
+                Чат начат. Ожидайте первого вопроса от AI-интервьюера...
+              </div>
+            )}
+            {chatCompleted && results && (
+              <div className="bg-gradient-to-r from-orange-50 to-rose-50 rounded-xl p-6 border border-orange-200">
+                <h3 className="text-xl font-semibold mb-4 text-orange-900">Интервью завершено!</h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-sm text-zinc-600">Оценка</div>
+                    <div className="text-3xl font-bold text-orange-600">{results.score}%</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-zinc-600">Обратная связь</div>
+                    <div className="text-zinc-800">{results.feedback}</div>
+                  </div>
+                  {results.recommendations.length > 0 && (
+                    <div>
+                      <div className="text-sm text-zinc-600 mb-2">Рекомендации</div>
+                      <ul className="list-disc list-inside space-y-1 text-zinc-800">
+                        {results.recommendations.map((rec, idx) => (
+                          <li key={idx}>{rec}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => navigate('/dashboard')}
+                  className="mt-4 px-4 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700"
+                >
+                  Вернуться к дашборду
+                </button>
+              </div>
+            )}
+            {messages.map((msg) => (
+              <div key={msg.id} className="grid gap-2">
+                {msg.type === 'question' && (
+                  <div className="self-start max-w-[80%] rounded-2xl px-4 py-2 bg-orange-100 text-zinc-900">
+                    Вопрос: {msg.content}
+                  </div>
+                )}
+                {msg.type === 'user' && (
+                  <div className="self-end max-w-[80%] rounded-2xl px-4 py-2 bg-orange-600 text-white ml-auto">
+                    {msg.content}
+                  </div>
+                )}
+                {msg.type === 'answer' && (
+                  <div className="self-start max-w-[80%] rounded-2xl px-4 py-2 bg-white border border-orange-100 shadow-soft">
+                    Ответ: {msg.content}
+                  </div>
+                )}
               </div>
             ))}
-            <div className="mt-2">
-              <div className="text-sm text-zinc-500 mb-1">Код:</div>
-              <pre className="bg-zinc-950 text-zinc-100 rounded-lg p-4 overflow-auto text-xs">
-{`import numpy as np
-from sklearn.metrics import roc_auc_score
-
-y_true = np.array([0, 1, 1, 0, 1])
-y_score = np.array([0.2, 0.9, 0.6, 0.4, 0.8])
-print('ROC-AUC:', roc_auc_score(y_true, y_score))`}
-              </pre>
+            {isLoading && (
+              <div className="text-center text-zinc-400 py-2">
+                <div className="inline-block animate-pulse">Обработка...</div>
             </div>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
           <input 
-            className="flex-1 px-3 py-2 rounded-lg border border-orange-200" 
+            className="flex-1 px-3 py-2 rounded-lg border border-orange-200 focus:outline-none focus:ring-2 focus:ring-orange-500"
             placeholder="Напишите ответ..." 
-            onFocus={handleFeatureClick}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleFeatureClick()
-              }
-            }}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isLoading || !sessionId}
           />
-          <button onClick={handleFeatureClick} className="px-4 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700">Отправить</button>
+          <button
+            onClick={handleSend}
+            disabled={isLoading || !sessionId || !inputValue.trim() || chatCompleted}
+            className="px-4 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:bg-orange-300 disabled:cursor-not-allowed"
+          >
+            Отправить
+          </button>
         </div>
       </main>
     </div>
   )
 }
-
-

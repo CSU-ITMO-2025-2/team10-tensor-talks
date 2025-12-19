@@ -53,6 +53,15 @@ services:
     ports:
       - "8081:8081"
 
+  session-service:
+    build:
+      context: ./backend/session-service
+    environment:
+      SESSION_SERVER_HOST: "0.0.0.0"
+      SESSION_SERVER_PORT: "8083"
+    ports:
+      - "8083:8083"
+
   bff-service:
     build:
       context: ./backend/bff-service
@@ -61,10 +70,20 @@ services:
       BFF_SERVER_PORT: "8080"
       BFF_AUTH_SERVICE_BASE_URL: http://auth-service:8081
       BFF_AUTH_SERVICE_TIMEOUT_SECONDS: "5"
+      BFF_SESSION_SERVICE_BASE_URL: http://session-service:8083
+      BFF_SESSION_SERVICE_TIMEOUT_SECONDS: "5"
+      BFF_KAFKA_BROKERS: kafka:9092
+      BFF_KAFKA_TOPIC_CHAT_OUT: chat.events.out
+      BFF_KAFKA_TOPIC_CHAT_IN: chat.events.in
+      BFF_KAFKA_CONSUMER_GROUP: bff-service-group
       BFF_CORS_ALLOW_ORIGINS: "*"
       BFF_CORS_ALLOW_HEADERS: Authorization,Content-Type
     depends_on:
       auth-service:
+        condition: service_started
+      session-service:
+        condition: service_started
+      kafka:
         condition: service_started
     ports:
       - "8080:8080"
@@ -80,6 +99,111 @@ services:
     ports:
       - "5173:80"
 
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    depends_on:
+      - auth-service
+      - bff-service
+      - user-store-service
+      - session-service
+      - mock-model-service
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:latest
+    volumes:
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:latest
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  kafdrop:
+    image: obsidiandynamics/kafdrop:latest
+    environment:
+      KAFKA_BROKERCONNECT: kafka:9092
+      SERVER_PORT: 9000
+      JVM_OPTS: "-Xms32M -Xmx64M"
+    ports:
+      - "9000:9000"
+    depends_on:
+      - kafka
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "29092:29092"
+      - "9092:9092"
+
+  mock-model-service:
+    build:
+      context: ./backend/mock-model-service
+    environment:
+      MOCK_MODEL_SERVER_HOST: "0.0.0.0"
+      MOCK_MODEL_SERVER_PORT: "8084"
+      MOCK_MODEL_KAFKA_BROKERS: kafka:9092
+      MOCK_MODEL_KAFKA_TOPIC_CHAT_OUT: chat.events.out
+      MOCK_MODEL_KAFKA_TOPIC_CHAT_IN: chat.events.in
+      MOCK_MODEL_KAFKA_CONSUMER_GROUP: mock-model-service-group
+      MOCK_MODEL_MODEL_MAX_QUESTIONS: "5"
+      MOCK_MODEL_MODEL_QUESTION_DELAY_SECONDS: "2"
+    depends_on:
+      kafka:
+        condition: service_started
+    ports:
+      - "8084:8084"
+
 volumes:
   postgres_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
 

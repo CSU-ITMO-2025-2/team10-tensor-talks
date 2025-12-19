@@ -34,26 +34,41 @@
   Конфигурация через Viper (`config/config.yaml` + `BFF_*` из окружения):
   - `server.host`, `server.port` — HTTP-сервер;
   - `auth_service.base_url`, `auth_service.timeout_seconds` — подключение к `auth-service`;
+  - `session_service.base_url`, `session_service.timeout_seconds` — подключение к `session-service`;
+  - `kafka.brokers`, `kafka.topic_chat_out`, `kafka.topic_chat_in`, `kafka.consumer_group` — настройки Kafka;
   - `cors.allow_origins`, `cors.allow_headers` — настройки CORS.
 
 - `internal/client`  
-  `AuthClient` — HTTP-клиент к `auth-service`:
-  - `Register(login, password)` — регистрация;
-  - `Login(login, password)` — логин;
-  - `Refresh(refreshToken)` — обновление токенов;
-  - `Me(accessToken)` — получение текущего пользователя.
+  HTTP-клиенты к другим сервисам:
+  - `AuthClient` — клиент к `auth-service`:
+    - `Register(login, password)` — регистрация;
+    - `Login(login, password)` — логин;
+    - `Refresh(refreshToken)` — обновление токенов;
+    - `Me(accessToken)` — получение текущего пользователя.
+  - `SessionClient` — клиент к `session-service`:
+    - `CreateSession(userID)` — создание новой сессии чата.
 
 - `internal/service`  
-  `AuthService` — бизнес-слой BFF для аутентификации:
-  - оборачивает ошибки из `auth-service` в доменные ошибки `ErrInvalidCredentials`, `ErrConflict`, `ErrBadRequest`;
-  - предоставляет методы `Register`, `Login`, `Refresh`, `CurrentUser` для HTTP-слоя.
+  Бизнес-слой BFF:
+  - `AuthService` — для аутентификации:
+    - оборачивает ошибки из `auth-service` в доменные ошибки `ErrInvalidCredentials`, `ErrConflict`, `ErrBadRequest`;
+    - предоставляет методы `Register`, `Login`, `Refresh`, `CurrentUser` для HTTP-слоя.
+  - `ChatService` — для управления чатами:
+    - создаёт сессии через `session-service`;
+    - отправляет события в Kafka (`chat.events.out`);
+    - читает события от модели из Kafka (`chat.events.in`);
+    - управляет очередью вопросов и результатами чатов.
 
 - `internal/handler`  
   HTTP-слой на Gin, маршруты под `/api`:
   - `POST /api/auth/register` — регистрация;
   - `POST /api/auth/login` — логин;
   - `POST /api/auth/refresh` — обновление токенов;
-  - `GET /api/auth/me` — информация о текущем пользователе по access-токену.
+  - `GET /api/auth/me` — информация о текущем пользователе по access-токену;
+  - `POST /api/chat/start` — начать новый чат;
+  - `POST /api/chat/message` — отправить сообщение в чат;
+  - `GET /api/chat/:session_id/question` — получить следующий вопрос (polling);
+  - `GET /api/chat/:session_id/results` — получить результаты чата.
 
 - `internal/middleware`  
   - CORS-мидлвара, сконфигурированная из `CORSConfig`.
@@ -74,6 +89,15 @@
     - принимает `refresh_token` от фронтенда;
     - вызывает `auth-service /auth/refresh` и отдаёт новую пару токенов.
 - Валидация токенов и все проверки (срок действия, подпись, тип токена) происходят только в `auth-service`.
+
+### Работа с чатами
+
+BFF управляет чатами через:
+- `session-service` — для создания сессий;
+- Kafka — для асинхронной обработки событий чатов;
+- `mock-model-service` — обрабатывает события и генерирует вопросы/результаты.
+
+Подробнее см. [CHAT_IMPLEMENTATION.md](../CHAT_IMPLEMENTATION.md) и [KAFKA.md](../KAFKA.md).
 
 ### Ограничения
 
