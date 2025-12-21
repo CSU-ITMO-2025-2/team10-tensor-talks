@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/tensor-talks/bff-service/internal/client"
 	"github.com/tensor-talks/bff-service/internal/service"
 	"go.uber.org/zap"
 )
@@ -48,6 +50,19 @@ func (h *Handler) RegisterRoutes(router gin.IRouter) {
 		chat.POST("/message", h.sendMessage)
 		chat.GET("/:session_id/question", h.getNextQuestion)
 		chat.GET("/:session_id/results", h.getResults)
+
+		interviews := api.Group("/interviews")
+		interviews.Use(func(c *gin.Context) {
+			h.logger.Info("Interviews group request",
+				zap.String("method", c.Request.Method),
+				zap.String("path", c.Request.URL.Path),
+				zap.String("query", c.Request.URL.RawQuery),
+			)
+		})
+		// Важно: сначала регистрируем конкретные маршруты, потом параметризованные
+		interviews.GET("", h.getInterviews)
+		interviews.GET("/:session_id/chat", h.getInterviewChat)
+		interviews.GET("/:session_id/result", h.getInterviewResult)
 	}
 }
 
@@ -86,7 +101,13 @@ func (h *Handler) register(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": service.ErrorMessage(err)})
 		default:
 			h.logger.Error("Register failed: internal error", zap.Error(err), zap.String("login", req.Login))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			// Пытаемся получить детальное сообщение об ошибке, если оно доступно
+			errorMsg := service.ErrorMessage(err)
+			if errorMsg == err.Error() {
+				// Если сообщение не извлечено, используем общее
+				errorMsg = "internal error"
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
 		}
 		return
 	}
@@ -122,7 +143,13 @@ func (h *Handler) login(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": service.ErrorMessage(err)})
 		default:
 			h.logger.Error("Login failed: internal error", zap.Error(err), zap.String("login", req.Login))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			// Пытаемся получить детальное сообщение об ошибке, если оно доступно
+			errorMsg := service.ErrorMessage(err)
+			if errorMsg == err.Error() {
+				// Если сообщение не извлечено, используем общее
+				errorMsg = "internal error"
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
 		}
 		return
 	}
@@ -207,11 +234,13 @@ func extractBearer(header string) string {
 }
 
 type startChatRequest struct {
-	UserID string `json:"user_id" binding:"required"`
+	UserID uuid.UUID            `json:"user_id" binding:"required"`
+	Params client.SessionParams `json:"params" binding:"required"`
 }
 
 type startChatResponse struct {
-	SessionID string `json:"session_id"`
+	SessionID uuid.UUID `json:"session_id"`
+	Ready     bool      `json:"ready"`
 }
 
 // startChat обрабатывает POST /api/chat/start.
@@ -223,24 +252,30 @@ func (h *Handler) startChat(c *gin.Context) {
 		return
 	}
 
-	h.logger.Info("Start chat request", zap.String("user_id", req.UserID))
-	sessionID, err := h.chat.StartChat(c.Request.Context(), req.UserID)
+	h.logger.Info("Start chat request", zap.String("user_id", req.UserID.String()))
+	sessionID, err := h.chat.StartChat(c.Request.Context(), req.UserID, req.Params)
 	if err != nil {
-		h.logger.Error("Start chat failed", zap.Error(err), zap.String("user_id", req.UserID))
+		if err.Error() == "max active sessions reached" {
+			h.logger.Warn("Start chat failed: max active sessions reached", zap.String("user_id", req.UserID.String()))
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "max active sessions reached"})
+			return
+		}
+		h.logger.Error("Start chat failed", zap.Error(err), zap.String("user_id", req.UserID.String()))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start chat"})
 		return
 	}
 
-	h.logger.Info("Chat started successfully", zap.String("session_id", sessionID))
+	h.logger.Info("Chat started successfully", zap.String("session_id", sessionID.String()))
 	c.JSON(http.StatusCreated, startChatResponse{
 		SessionID: sessionID,
+		Ready:     true,
 	})
 }
 
 type sendMessageRequest struct {
-	SessionID string `json:"session_id" binding:"required"`
-	UserID    string `json:"user_id" binding:"required"`
-	Content   string `json:"content" binding:"required"`
+	SessionID uuid.UUID `json:"session_id" binding:"required"`
+	UserID    uuid.UUID `json:"user_id" binding:"required"`
+	Content   string    `json:"content" binding:"required"`
 }
 
 // sendMessage обрабатывает POST /api/chat/message.
@@ -253,20 +288,20 @@ func (h *Handler) sendMessage(c *gin.Context) {
 	}
 
 	h.logger.Info("Send message request",
-		zap.String("session_id", req.SessionID),
-		zap.String("user_id", req.UserID),
+		zap.String("session_id", req.SessionID.String()),
+		zap.String("user_id", req.UserID.String()),
 	)
 
 	if err := h.chat.SendMessage(c.Request.Context(), req.SessionID, req.UserID, req.Content); err != nil {
 		h.logger.Error("Send message failed",
 			zap.Error(err),
-			zap.String("session_id", req.SessionID),
+			zap.String("session_id", req.SessionID.String()),
 		)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send message"})
 		return
 	}
 
-	h.logger.Info("Message sent successfully", zap.String("session_id", req.SessionID))
+	h.logger.Info("Message sent successfully", zap.String("session_id", req.SessionID.String()))
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -334,4 +369,101 @@ func (h *Handler) getResults(c *gin.Context) {
 		Recommendations: results.Recommendations,
 		CompletedAt:     results.CompletedAt.Format(time.RFC3339),
 	})
+}
+
+// getInterviews обрабатывает GET /api/interviews (список всех интервью пользователя).
+func (h *Handler) getInterviews(c *gin.Context) {
+	userIDStr := c.Query("user_id")
+	if userIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id query parameter required"})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user_id"})
+		return
+	}
+
+	interviews, err := h.chat.GetInterviews(c.Request.Context(), userID)
+	if err != nil {
+		h.logger.Error("Get interviews failed",
+			zap.Error(err),
+			zap.String("user_id", userID.String()),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get interviews"})
+		return
+	}
+
+	h.logger.Info("Interviews retrieved",
+		zap.String("user_id", userID.String()),
+		zap.Int("count", len(interviews)),
+	)
+
+	c.JSON(http.StatusOK, gin.H{"interviews": interviews})
+}
+
+// getInterviewChat обрабатывает GET /api/interviews/:session_id/chat (история чата).
+func (h *Handler) getInterviewChat(c *gin.Context) {
+	h.logger.Info("GetInterviewChat called", zap.String("path", c.Request.URL.Path))
+	sessionID, err := uuid.Parse(c.Param("session_id"))
+	if err != nil {
+		h.logger.Warn("Invalid session_id in GetInterviewChat", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session_id"})
+		return
+	}
+	h.logger.Info("Getting chat history", zap.String("session_id", sessionID.String()))
+
+	messages, err := h.chat.GetChatHistory(c.Request.Context(), sessionID)
+	if err != nil {
+		if err.Error() == "chat dump not found" || err.Error() == "chat crud service error: chat dump not found" {
+			h.logger.Warn("Chat dump not found", zap.String("session_id", sessionID.String()))
+			c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
+			return
+		}
+		h.logger.Error("Get chat history failed",
+			zap.Error(err),
+			zap.String("session_id", sessionID.String()),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get chat history"})
+		return
+	}
+
+	h.logger.Info("Chat history retrieved",
+		zap.String("session_id", sessionID.String()),
+		zap.Int("messages_count", len(messages)),
+	)
+
+	c.JSON(http.StatusOK, gin.H{"messages": messages})
+}
+
+// getInterviewResult обрабатывает GET /api/interviews/:session_id/result (результат интервью).
+func (h *Handler) getInterviewResult(c *gin.Context) {
+	sessionID, err := uuid.Parse(c.Param("session_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session_id"})
+		return
+	}
+
+	result, err := h.chat.GetChatResult(c.Request.Context(), sessionID)
+	if err != nil {
+		if err.Error() == "result not found" || err.Error() == "results crud service error: result not found" {
+			h.logger.Warn("Result not found", zap.String("session_id", sessionID.String()))
+			c.JSON(http.StatusNotFound, gin.H{"error": "result not found"})
+			return
+		}
+		h.logger.Error("Get chat result failed",
+			zap.Error(err),
+			zap.String("session_id", sessionID.String()),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get result"})
+		return
+	}
+
+	h.logger.Info("Chat result retrieved",
+		zap.String("session_id", sessionID.String()),
+		zap.Int("score", result.Score),
+	)
+
+	c.JSON(http.StatusOK, gin.H{"result": result})
 }

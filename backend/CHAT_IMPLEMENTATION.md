@@ -1,195 +1,341 @@
-# Реализация MVP логики чатов
+# Реализация логики чатов и управления сессиями
 
 ## Обзор
 
-Реализована базовая MVP логика работы с активными чатами для платформы TensorTalks.
+Документация описывает реализацию логики работы с активными чатами и управления сессиями интервью для платформы TensorTalks. Архитектура включает систему управления сессиями с кэшированием, CRUD сервисы для чатов и результатов, а также пайплайн создания программы интервью.
 
 ## Архитектура
 
+### Общая схема
+
 ```
-Пользователь → Frontend → BFF → Session Service (создание сессии)
+Пользователь → Frontend → BFF → Session Manager (создание сессии)
                               ↓
-                         Kafka Producer (chat.events.out)
+                    Session CRUD (БД)
                               ↓
-                         Kafka Broker
+                    Redis (кэш активных сессий)
                               ↓
-                         Model Service (будущее)
+                    Kafka (interview.build.request)
                               ↓
-                         Kafka Consumer (chat.events.in)
+                    Interview Builder Service
                               ↓
-                         BFF → Frontend → Пользователь
+                    Kafka (interview.build.response)
+                              ↓
+                    Session Manager (сохранение программы)
+                              ↓
+                    Kafka (chat.events.out)
+                              ↓
+                    Mock Model Service
+                              ↓
+                    Chat CRUD (сохранение сообщений)
+                    Results CRUD (сохранение результатов)
+                              ↓
+                    Kafka (chat.events.in)
+                              ↓
+                    BFF → Frontend → Пользователь
 ```
 
-## Компоненты
+### Компоненты системы
 
-### 1. session-service
-
-Микросервис-заглушка для управления сессиями чатов.
+#### 1. session-crud-service ✅
+CRUD микросервис для сессий интервью в PostgreSQL.
 
 **Эндпоинты:**
 - `POST /sessions` — создание новой сессии
-  - Request: `{ "user_id": "uuid" }`
-  - Response: `{ "session_id": "uuid" }`
+  - Request: `{ "user_id": "uuid", "params": { "topics": [...], "level": "...", "type": "..." } }`
+  - Response: `{ "session": {...} }`
+- `GET /sessions/:id` — получение сессии по ID
+- `GET /sessions/user/:user_id` — получение всех сессий пользователя
+- `PUT /sessions/:id/program` — обновление программы интервью
+- `PUT /sessions/:id/close` — закрытие сессии (установка end_time)
+- `DELETE /sessions/:id` — удаление сессии
 
-**Реализация:**
-- Пока просто генерирует UUID для сессии
-- В будущем будет хранить сессии в БД и управлять их жизненным циклом
+**Таблица `sessions`:**
+- session_id (UUID, PK)
+- user_id (UUID, indexed)
+- start_time, end_time (timestamps)
+- params (JSONB) — topics, level, type
+- interview_program (JSONB) — программа интервью
 
-### 2. Kafka очереди
+#### 2. session-service (session-manager) ✅
+Микросервис управления сессиями с Redis кэшированием и интеграцией с interview builder.
 
-#### Топик `chat.events.out` (BFF → Модель)
+**Реализованные возможности:**
+- ✅ Redis кэш для активных сессий
+- ✅ Интеграция с session-crud-service
+- ✅ Kafka producer/consumer для работы с interview builder
+- ✅ REST API:
+  - `POST /sessions` — создание сессии с параметрами и проверкой лимита
+  - `GET /sessions/:id/program` — получение программы (из Redis или CRUD)
+  - `PUT /sessions/:id/close` — закрытие сессии
+- ✅ Логика:
+  - При создании: проверка лимита активных сессий в Redis → создание в CRUD → отправка запроса в Kafka → ожидание ответа (таймаут 30 сек) → сохранение программы в CRUD и Redis
+  - При получении программы: сначала Redis, если нет — из CRUD (с кэшированием)
+  - При закрытии: удаление из Redis, обновление в CRUD
 
-**События:**
-1. `chat.started` — начало нового чата
-   - Payload: `session_id`, `user_id`, `started_at`
-
-2. `chat.user_message` — сообщение от пользователя
-   - Payload: `session_id`, `user_id`, `content`, `message_id`, `timestamp`
-
-#### Топик `chat.events.in` (Модель → BFF)
-
-**События:**
-1. `chat.model_question` — вопрос от модели
-   - Payload: `session_id`, `user_id`, `question`, `question_id`, `timestamp`
-
-2. `chat.completed` — завершение чата с результатами
-   - Payload: `session_id`, `user_id`, `results` (score, feedback, recommendations), `completed_at`
-
-### 3. BFF Service
-
-**Новые эндпоинты:**
-- `POST /api/chat/start` — начать новый чат
-  - Request: `{ "user_id": "uuid" }`
-  - Response: `{ "session_id": "uuid" }`
-
-- `POST /api/chat/message` — отправить сообщение
-  - Request: `{ "session_id": "uuid", "user_id": "uuid", "content": "текст" }`
-  - Response: `{ "status": "ok" }`
-
-**Логика:**
-1. При старте чата:
-   - BFF запрашивает сессию у `session-service`
-   - BFF отправляет событие `chat.started` в Kafka
-
-2. При отправке сообщения:
-   - BFF отправляет событие `chat.user_message` в Kafka
-
-3. При получении события от модели:
-   - BFF читает из Kafka топика `chat.events.in`
-   - Обрабатывает события `chat.model_question` и `chat.completed`
-   - В будущем будет отправлять через WebSocket клиенту
-
-### 4. Frontend
-
-**Обновления:**
-- `src/services/chat.ts` — новый сервис для работы с чатами
-- `src/pages/Chat.tsx` — обновлен для работы с реальным API
-- `src/pages/Dashboard.tsx` — добавлена кнопка "Начать новое интервью"
+#### 3. mock-interview-builder-service ✅ (базовая структура)
+Сервис для создания программы интервью через Kafka очереди.
 
 **Функциональность:**
-- Автоматическое создание сессии при открытии чата
-- Отправка сообщений через API
-- Отображение сообщений в реальном времени (пока заглушка)
-- Ожидание вопросов от модели (пока заглушка)
+- Слушает очередь `interview.build.request`
+- Возвращает статичную программу интервью в очередь `interview.build.response`
+- В будущем: динамическая генерация программы на основе параметров
+
+**Формат события interview.build.request:**
+```json
+{
+  "event_id": "uuid",
+  "event_type": "interview.build.request",
+  "timestamp": "ISO8601",
+  "service": "session-manager-service",
+  "version": "1.0.0",
+  "payload": {
+    "session_id": "uuid",
+    "params": {
+      "topics": ["ml", "nlp"],
+      "level": "middle",
+      "type": "interview"
+    }
+  }
+}
+```
+
+**Формат события interview.build.response:**
+```json
+{
+  "event_id": "uuid",
+  "event_type": "interview.build.response",
+  "timestamp": "ISO8601",
+  "service": "mock-interview-builder-service",
+  "version": "1.0.0",
+  "payload": {
+    "session_id": "uuid",
+    "program": {
+      "questions": [
+        {
+          "question": "...",
+          "theory": "...",
+          "order": 1
+        }
+      ]
+    }
+  }
+}
+```
+
+#### 4. chat-crud-service ✅
+CRUD микросервис для чатов и сообщений в PostgreSQL.
+
+**Эндпоинты:**
+- `POST /messages` — сохранение нового сообщения
+  - Request: `{ "session_id": "uuid", "type": "system"|"user", "content": "..." }`
+- `GET /messages/:session_id` — получение всех сообщений сессии
+- `GET /chat-dumps/:session_id` — получение дампа завершенного чата
+- `POST /chat-dumps/:session_id` — создание дампа чата из сообщений
+
+**Таблицы:**
+- `messages` — id, session_id, type, content, created_at
+- `chat_dumps` — id, session_id (unique), chat (JSONB), created_at, updated_at
+
+#### 5. results-crud-service ✅
+CRUD микросервис для результатов интервью в PostgreSQL.
+
+**Эндпоинты:**
+- `POST /results` — создание нового результата
+  - Request: `{ "session_id": "uuid", "score": 85, "feedback": "..." }`
+- `GET /results/:session_id` — получение результата по session_id
+- `GET /results?session_ids=uuid1,uuid2,...` — получение результатов по списку session_id
+
+**Таблица `results`:**
+- id, session_id (unique), score, feedback, created_at, updated_at
+
+#### 6. Kafka очереди
+
+**Существующие топики:**
+
+**chat.events.out** (BFF → Model):
+- `chat.started` — начало нового чата
+- `chat.user_message` — сообщение от пользователя
+
+**chat.events.in** (Model → BFF):
+- `chat.model_question` — вопрос от модели
+- `chat.completed` — завершение чата с результатами
+
+**Новые топики:**
+- `interview.build.request` — запрос на создание программы интервью
+- `interview.build.response` — ответ с программой интервью
+
+#### 7. Redis
+Кэширование активных сессий:
+- Ключ: `session:{session_id}`
+- Значение: JSON с программой интервью и метаданными
+- TTL: настраиваемый (например, 24 часа)
+
+#### 8. Mock Model Service ✅ (будущий marking-service)
+**Реализованные возможности:**
+- ✅ Убрана внутренняя логика вопросов (удалён model/questions.go)
+- ✅ Добавлен HTTP клиент к session-manager для получения программы интервью
+- ✅ Добавлен HTTP клиент к chat-crud для сохранения сообщений
+- ✅ Добавлен HTTP клиент к results-crud для сохранения результатов
+- ✅ Модифицирована логика:
+  - При `chat.started`: запрос программы у session-manager, использование программы для вопросов
+  - При каждом сообщении (system/user): сначала сохранение в chat-crud, потом отправка в Kafka
+  - При завершении: сохранение финального сообщения, создание дампа чата, сохранение результатов, закрытие сессии в session-manager
+
+#### 9. BFF Service ✅
+**Реализованные возможности:**
+- ✅ Обновлено создание сессии для передачи параметров интервью (topics, level, type)
+- ✅ Добавлены клиенты к новым сервисам:
+  - session-manager-client (обновлен для работы с параметрами)
+  - session-crud-client (получение списка сессий по user_id)
+  - chat-crud-client (получение сообщений и дампов чатов)
+  - results-crud-client (получение результатов)
+- ✅ Новые endpoints:
+  - `GET /api/interviews?user_id=uuid` — список всех интервью пользователя
+  - `GET /api/interviews/:session_id/chat` — получение истории чата
+  - `GET /api/interviews/:session_id/result` — получение результата
 
 ## Пайплайн работы
 
-### Старт чата
+### 1. Создание и подготовка сессии
 
-1. Пользователь нажимает "Начать новое интервью" в Dashboard
-2. Frontend вызывает `POST /api/chat/start` с `user_id`
-3. BFF запрашивает сессию у `session-service`
-4. BFF отправляет событие `chat.started` в Kafka (`chat.events.out`)
-5. Frontend получает `session_id` и переходит на `/chat/{session_id}`
+```
+Frontend → BFF → Session Manager (POST /sessions с параметрами)
+                              ↓
+                    Проверка лимита активных сессий в Redis
+                              ↓
+                    Session CRUD (создание записи)
+                              ↓
+                    Kafka Producer (interview.build.request)
+                              ↓
+                    Interview Builder Service (обработка)
+                              ↓
+                    Kafka Producer (interview.build.response)
+                              ↓
+                    Session Manager Consumer (получение программы)
+                              ↓
+                    Session CRUD (обновление программы)
+                              ↓
+                    Redis (сохранение в кэш)
+                              ↓
+                    BFF → Frontend (возврат session_id)
+```
 
-### Отправка сообщения
+### 2. Старт интервью
 
-1. Пользователь вводит ответ и нажимает "Отправить"
-2. Frontend вызывает `POST /api/chat/message` с `session_id`, `user_id`, `content`
-3. BFF отправляет событие `chat.user_message` в Kafka (`chat.events.out`)
-4. Frontend отображает сообщение в чате
+```
+Frontend → BFF → Kafka (chat.events.out: chat.started)
+                              ↓
+                    Mock Model Service (получение события)
+                              ↓
+                    Session Manager (GET /sessions/:id/program)
+                              ↓ (из Redis или CRUD)
+                    Mock Model Service (использование программы)
+                              ↓
+                    Chat CRUD (POST /messages - сохранение вопроса)
+                              ↓
+                    Kafka (chat.events.in: chat.model_question)
+                              ↓
+                    BFF Consumer → Frontend (отображение вопроса)
+```
 
-### Получение вопроса от модели
+### 3. Отправка ответа пользователя
 
-1. Model Service (в будущем) обрабатывает событие и генерирует вопрос
-2. Model Service отправляет событие `chat.model_question` в Kafka (`chat.events.in`)
-3. BFF Consumer получает событие и обрабатывает его
-4. В будущем: BFF отправляет вопрос через WebSocket клиенту
-5. Frontend отображает вопрос в чате
+```
+Frontend → BFF → Kafka (chat.events.out: chat.user_message)
+                              ↓
+                    Mock Model Service (обработка ответа)
+                              ↓
+                    Проверка программы интервью (следующий вопрос)
+                              ↓
+                    Chat CRUD (POST /messages - сохранение вопроса)
+                              ↓
+                    Kafka (chat.events.in: chat.model_question)
+                              ↓
+                    BFF Consumer → Frontend (отображение вопроса)
+```
 
-### Завершение чата
+### 4. Завершение интервью
 
-1. Model Service отправляет событие `chat.completed` в Kafka (`chat.events.in`)
-2. BFF Consumer получает событие с результатами
-3. В будущем: BFF отправляет результаты через WebSocket клиенту
-4. Frontend отображает результаты и перенаправляет на страницу результатов
+```
+Mock Model Service (последний вопрос задан)
+                              ↓
+                    Chat CRUD (POST /messages - последнее сообщение)
+                              ↓
+                    Chat CRUD (POST /chat-dumps/:session_id - создание дампа)
+                              ↓
+                    Results CRUD (POST /results - сохранение результатов)
+                              ↓
+                    Session Manager (PUT /sessions/:id/close)
+                              ↓
+                    Kafka (chat.events.in: chat.completed)
+                              ↓
+                    BFF Consumer → Frontend (отображение результатов)
+```
+
+### 5. Просмотр истории интервью
+
+```
+Frontend → BFF (GET /api/interviews)
+                              ↓
+                    Session Manager → Session CRUD (GET /sessions/user/:user_id)
+                              ↓
+                    Session Manager → Results CRUD (GET /results?session_ids=...)
+                              ↓
+                    BFF → Frontend (список интервью)
+                              ↓
+Frontend → BFF (GET /api/interviews/:session_id/chat)
+                              ↓
+                    Chat CRUD (GET /messages/:session_id)
+                              ↓
+                    BFF → Frontend (история чата)
+                              ↓
+Frontend → BFF (GET /api/interviews/:session_id/result)
+                              ↓
+                    Results CRUD (GET /results/:session_id)
+                              ↓
+                    BFF → Frontend (результат)
+```
+
+## Статус реализации
+
+### ✅ Завершено
+
+1. **session-crud-service** — полностью реализован
+2. **chat-crud-service** — полностью реализован
+3. **results-crud-service** — полностью реализован
+4. **mock-interview-builder-service** — полностью реализован (Kafka producer/consumer, service логика)
+5. **session-service (session-manager)** — полностью реализован (Redis кэш, Kafka интеграция, CRUD клиент)
+6. **mock-model-service (будущий marking-service)** — полностью реализован (интеграция с новыми сервисами)
+7. **bff-service** — полностью обновлен для работы с новыми API
+8. **docker-compose.yml** — обновлен со всеми новыми сервисами и Redis
+9. **Фронтенд** — обновлен для работы с реальными данными:
+   - Обновлен `startChat` для передачи параметров интервью (topics, level, type)
+   - Добавлена загрузка списка интервью из API
+   - Обновлена страница Results для показа реальных данных и истории чата
+   - Убраны моковые данные из Dashboard
 
 ## Метрики
 
 Добавлены метрики для мониторинга:
-
 - `tensortalks_kafka_messages_produced_total` — количество отправленных сообщений в Kafka
 - `tensortalks_kafka_messages_consumed_total` — количество полученных сообщений из Kafka
-- `tensortalks_kafka_message_processing_duration_seconds` — длительность обработки сообщений
 - `tensortalks_business_sessions_created_total` — количество созданных сессий
+- `tensortalks_business_chat_operations_total` — операции с чатами
+- `tensortalks_business_result_operations_total` — операции с результатами
 
 ## Логирование
 
 Все операции логируются:
 - Создание сессий
+- Сохранение сообщений и результатов
 - Отправка/получение сообщений в Kafka
 - Обработка событий
 - Ошибки
 
-## Mock Model Service
-
-Реализована умная заглушка `mock-model-service`, которая:
-- Читает события из `chat.events.out` (chat.started, chat.user_message)
-- Отправляет события в `chat.events.in` (chat.model_question, chat.completed)
-- Отслеживает состояние сессий и количество заданных вопросов
-- Автоматически завершает чат после заданного количества вопросов (по умолчанию 5)
-- Использует статичные вопросы из набора по ML
-- Генерирует оценки, обратную связь и рекомендации
-
-Подробнее см. [mock-model-service/README.md](./mock-model-service/README.md)
-
-## Полный пайплайн работы
-
-### 1. Старт чата
-```
-Frontend → BFF → Session Service (создание сессии)
-         ↓
-    Kafka (chat.events.out: chat.started)
-         ↓
-    Mock Model Service → Kafka (chat.events.in: chat.model_question)
-         ↓
-    BFF Consumer → ChatService (добавление вопроса в очередь)
-         ↓
-    Frontend (polling) → BFF → ChatService (получение вопроса)
-         ↓
-    Frontend отображает вопрос
-```
-
-### 2. Отправка ответа
-```
-Frontend → BFF → Kafka (chat.events.out: chat.user_message)
-         ↓
-    Mock Model Service (проверка счётчика)
-         ↓
-    Если < max_questions:
-        → Kafka (chat.events.in: chat.model_question)
-        → BFF Consumer → ChatService
-        → Frontend (polling) получает вопрос
-    Если >= max_questions:
-        → Kafka (chat.events.in: chat.completed)
-        → BFF Consumer → ChatService (сохранение результатов)
-        → Frontend (polling) получает результаты
-```
-
-## Следующие шаги
+## Следующие шаги (будущие улучшения)
 
 1. **WebSocket интеграция** — для real-time обновлений вместо polling
-2. **Хранение сессий** — добавить БД в `session-service`
-3. **История чатов** — сохранять сообщения и результаты
-4. **Реальная модель** — заменить mock-model-service на реальную AI-модель
-5. **Обработка ошибок** — улучшить обработку ошибок Kafka и retry логику
+2. **Реальная модель** — замена mock-interview-builder-service на реальную AI-модель с динамической генерацией программ интервью
+3. **Восстановление сессий** — возможность продолжить незавершенное интервью
+4. **Дополнительные метрики** — расширенная аналитика и мониторинг

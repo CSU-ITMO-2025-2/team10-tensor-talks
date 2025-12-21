@@ -1,8 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { MouseEvent } from 'react'
 import MVPNotification from '../components/MVPNotification'
-import { startChat } from '../services/chat'
+import { startChat, getInterviews, type InterviewInfo } from '../services/chat'
 
 function Card({ children }: { children: React.ReactNode }) {
   return <div className="bg-white rounded-xl border border-orange-100 shadow-soft p-5">{children}</div>
@@ -12,6 +12,9 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'learner' | 'hr'>('learner')
   const [showMVPPopup, setShowMVPPopup] = useState(false)
+  const [interviews, setInterviews] = useState<InterviewInfo[]>([])
+  const [isLoadingInterviews, setIsLoadingInterviews] = useState(false)
+  const [userLogin, setUserLogin] = useState<string | null>(null)
   
   const handleFeatureClick = (e?: MouseEvent) => {
     e?.preventDefault()
@@ -56,7 +59,12 @@ export default function Dashboard() {
       }
 
       console.log('Starting chat for user:', user.id)
-      const response = await startChat(user.id)
+      // Параметры интервью по умолчанию
+      const response = await startChat(user.id, {
+        topics: ['ML Basics'],
+        level: 'middle',
+        type: 'interview'
+      })
       console.log('Chat started, response:', response)
       
       if (response && response.session_id) {
@@ -72,11 +80,48 @@ export default function Dashboard() {
       alert(errorMessage)
     }
   }
-  
-  const interviews = [
-    { id: 'ml-101', title: 'ML System Design', date: '12.09.2025', score: 78 },
-    { id: 'ml-102', title: 'NLP Basics', date: '05.09.2025', score: 64 },
-  ]
+
+  // Загрузка логина пользователя
+  useEffect(() => {
+    try {
+      const userStr = localStorage.getItem('tt_user')
+      if (userStr) {
+        const user = JSON.parse(userStr)
+        if (user?.login) {
+          setUserLogin(user.login)
+        }
+      }
+    } catch (e) {
+      // Игнорируем ошибки парсинга
+    }
+  }, [])
+
+  // Загрузка списка интервью
+  useEffect(() => {
+    const loadInterviews = async () => {
+      const userStr = localStorage.getItem('tt_user')
+      if (!userStr) return
+
+      try {
+        setIsLoadingInterviews(true)
+        const user = JSON.parse(userStr)
+        if (user && user.id) {
+          const interviewsList = await getInterviews(user.id)
+          // Сортируем по дате начала (новые сверху)
+          const sorted = interviewsList.sort((a, b) => 
+            new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+          )
+          setInterviews(sorted)
+        }
+      } catch (error) {
+        console.error('Failed to load interviews:', error)
+      } finally {
+        setIsLoadingInterviews(false)
+      }
+    }
+
+    loadInterviews()
+  }, [])
   const candidates = [
     { id: 'cand-1', name: 'Алексей Петров', role: 'ML Engineer', score: 72 },
     { id: 'cand-2', name: 'Мария Иванова', role: 'DS/ML', score: 81 },
@@ -118,6 +163,7 @@ export default function Dashboard() {
             </div>
           </div>
           <nav className="flex items-center gap-4 text-sm">
+            {userLogin && <span className="text-zinc-600 font-medium">{userLogin}</span>}
             <button onClick={handleFeatureClick} className="text-orange-700 hover:underline cursor-pointer">Профиль</button>
             <button onClick={handleFeatureClick} className="text-zinc-600 hover:underline cursor-pointer">Подписка</button>
             <button onClick={() => navigate('/auth')} className="px-3 py-1.5 rounded-lg border border-orange-200 hover:bg-orange-50">Выйти</button>
@@ -243,13 +289,54 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {interviews.map((i) => (
-                      <tr key={i.id} className="border-t border-orange-100 hover:bg-orange-50/50">
-                        <td className="p-3 text-orange-700 underline cursor-pointer" onClick={() => navigate(`/chat/${i.id}`)}>{i.title}</td>
-                        <td className="p-3">{i.date}</td>
-                        <td className="p-3 text-orange-700 underline cursor-pointer" onClick={() => navigate(`/results/${i.id}`)}>{i.score}%</td>
+                    {isLoadingInterviews ? (
+                      <tr>
+                        <td colSpan={3} className="p-3 text-center text-zinc-500">Загрузка...</td>
                       </tr>
-                    ))}
+                    ) : interviews.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="p-3 text-center text-zinc-500">Нет пройденных интервью</td>
+                      </tr>
+                    ) : (
+                      interviews.map((i) => {
+                        const date = new Date(i.start_time).toLocaleDateString('ru-RU', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric'
+                        })
+                        const title = i.params.topics?.join(', ') || 'Интервью'
+                        
+                        return (
+                          <tr key={i.session_id} className="border-t border-orange-100 hover:bg-orange-50/50">
+                            <td 
+                              className="p-3 text-orange-700 underline cursor-pointer" 
+                              onClick={() => {
+                                // Если есть результаты ИЛИ сессия завершена (есть end_time), открываем Results
+                                if (i.has_results || i.end_time) {
+                                  navigate(`/results/${i.session_id}`)
+                                } else {
+                                  navigate(`/chat/${i.session_id}`)
+                                }
+                              }}
+                            >
+                              {title}
+                            </td>
+                            <td className="p-3">{date}</td>
+                            <td 
+                              className="p-3 text-orange-700 underline cursor-pointer" 
+                              onClick={() => {
+                                // Если есть результаты ИЛИ сессия завершена (есть end_time), открываем Results
+                                if (i.has_results || i.end_time) {
+                                  navigate(`/results/${i.session_id}`)
+                                }
+                              }}
+                            >
+                              {i.has_results && i.score !== undefined ? `${i.score}%` : 'В процессе'}
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>

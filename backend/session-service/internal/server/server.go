@@ -10,20 +10,87 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/tensor-talks/session-service/internal/client"
 	"github.com/tensor-talks/session-service/internal/config"
 	"github.com/tensor-talks/session-service/internal/handler"
+	"github.com/tensor-talks/session-service/internal/kafka"
+	"github.com/tensor-talks/session-service/internal/redis"
+	"github.com/tensor-talks/session-service/internal/service"
 	"go.uber.org/zap"
 )
 
 // Server инкапсулирует HTTP-сервер session-service.
 type Server struct {
-	httpServer *http.Server
-	logger     *zap.Logger
+	httpServer    *http.Server
+	logger        *zap.Logger
+	kafkaConsumer *kafka.Consumer
+	kafkaProducer *kafka.Producer
+	redisCache    *redis.Cache
 }
 
 // New создаёт новый экземпляр Server.
 func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
-	sessionHandler := handler.NewSessionHandler(logger)
+	// Инициализация Redis кэша
+	redisCache := redis.NewCache(
+		cfg.Redis.Addr,
+		cfg.Redis.Password,
+		cfg.Redis.DB,
+		cfg.Redis.TTLHours,
+		logger,
+	)
+
+	// Проверка подключения к Redis
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := redisCache.Ping(ctx); err != nil {
+		logger.Warn("Failed to connect to Redis, continuing anyway", zap.Error(err))
+	} else {
+		logger.Info("Connected to Redis", zap.String("addr", cfg.Redis.Addr))
+	}
+
+	// Инициализация клиента к session-crud-service
+	crudClient := client.NewSessionCRUDClient(
+		cfg.SessionCRUD.BaseURL,
+		cfg.SessionCRUD.TimeoutSeconds,
+	)
+
+	// Инициализация Kafka producer
+	kafkaProducer, err := kafka.NewProducer(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.TopicRequest,
+		"session-manager-service",
+		"1.0.0",
+		logger,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("init kafka producer: %w", err)
+	}
+
+	// Инициализация Kafka consumer
+	kafkaConsumer, err := kafka.NewConsumer(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.TopicResponse,
+		cfg.Kafka.ConsumerGroup,
+		logger,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("init kafka consumer: %w", err)
+	}
+
+	// Создаём сервис управления сессиями
+	sessionManagerService := service.NewSessionManagerService(
+		crudClient,
+		redisCache,
+		kafkaProducer,
+		cfg.SessionManager.MaxActiveSessions,
+		cfg.SessionManager.ProgramTimeoutSeconds,
+		logger,
+	)
+
+	// Устанавливаем обработчик событий для consumer
+	kafkaConsumer.SetEventHandler(sessionManagerService)
+
+	sessionHandler := handler.NewSessionHandler(sessionManagerService, logger)
 
 	router := gin.Default()
 
@@ -49,11 +116,23 @@ func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	return &Server{httpServer: httpServer, logger: logger}, nil
+	return &Server{
+		httpServer:    httpServer,
+		logger:        logger,
+		kafkaConsumer: kafkaConsumer,
+		kafkaProducer: kafkaProducer,
+		redisCache:    redisCache,
+	}, nil
 }
 
-// Run запускает HTTP-сервер и ожидает завершения по контексту или ошибке.
+// Run запускает HTTP-сервер и Kafka consumer.
 func (s *Server) Run(ctx context.Context) error {
+	// Запускаем Kafka consumer
+	if err := s.kafkaConsumer.Start(ctx); err != nil {
+		return fmt.Errorf("start kafka consumer: %w", err)
+	}
+	defer s.kafkaConsumer.Close()
+
 	errCh := make(chan error, 1)
 
 	go func() {
@@ -65,6 +144,8 @@ func (s *Server) Run(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		s.logger.Info("Shutting down server")
+		s.kafkaProducer.Close()
+		s.redisCache.Close()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return s.httpServer.Shutdown(shutdownCtx)

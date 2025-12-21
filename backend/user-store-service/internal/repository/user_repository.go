@@ -125,12 +125,17 @@ func mapPGError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, gorm.ErrDuplicatedKey) {
-		return ErrDuplicateLogin
-	}
+
+	// Сначала проверяем PostgreSQL ошибку напрямую (более надежный способ)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return ErrDuplicateLogin
 	}
+
+	// Затем проверяем GORM ошибку
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return ErrDuplicateLogin
+	}
+
 	return err
 }

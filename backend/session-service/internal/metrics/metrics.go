@@ -13,8 +13,18 @@ var (
 		},
 		[]string{"service", "status"},
 	)
+
+	// BusinessSessionsOperationsTotal счетчик операций с сессиями
+	BusinessSessionsOperationsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tensortalks_business_sessions_operations_total",
+			Help: "Total number of session operations",
+		},
+		[]string{"service", "operation", "status"},
+	)
 )
 
 func init() {
 	prometheus.MustRegister(BusinessSessionsCreatedTotal)
+	prometheus.MustRegister(BusinessSessionsOperationsTotal)
 }

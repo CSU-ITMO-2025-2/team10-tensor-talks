@@ -15,9 +15,12 @@ import (
 // ChatService управляет чатами и сессиями.
 type ChatService struct {
 	sessionClient *client.SessionClient
+	sessionCRUDCl *client.SessionCRUDClient
+	chatCRUDCl    *client.ChatCRUDClient
+	resultsCRUDCl *client.ResultsCRUDClient
 	kafkaProducer *kafka.Producer
 	logger        *zap.Logger
-	// Хранилище активных сессий
+	// Хранилище активных сессий (только для активных чатов)
 	sessions sync.Map // map[string]*Session
 }
 
@@ -48,78 +51,94 @@ type ChatResults struct {
 }
 
 // NewChatService создаёт новый сервис для работы с чатами.
-func NewChatService(sessionClient *client.SessionClient, kafkaProducer *kafka.Producer, logger *zap.Logger) *ChatService {
+func NewChatService(
+	sessionClient *client.SessionClient,
+	sessionCRUDCl *client.SessionCRUDClient,
+	chatCRUDCl *client.ChatCRUDClient,
+	resultsCRUDCl *client.ResultsCRUDClient,
+	kafkaProducer *kafka.Producer,
+	logger *zap.Logger,
+) *ChatService {
 	return &ChatService{
 		sessionClient: sessionClient,
+		sessionCRUDCl: sessionCRUDCl,
+		chatCRUDCl:    chatCRUDCl,
+		resultsCRUDCl: resultsCRUDCl,
 		kafkaProducer: kafkaProducer,
 		logger:        logger,
 	}
 }
 
-// StartChat создаёт новую сессию и отправляет событие начала чата в Kafka.
-func (s *ChatService) StartChat(ctx context.Context, userID string) (string, error) {
-	// Создаём сессию через session-service
-	sessionResp, err := s.sessionClient.CreateSession(ctx, userID)
+// StartChat создаёт новую сессию с параметрами интервью и отправляет событие начала чата в Kafka.
+func (s *ChatService) StartChat(ctx context.Context, userID uuid.UUID, params client.SessionParams) (uuid.UUID, error) {
+	// Создаём сессию через session-manager-service с параметрами
+	sessionResp, err := s.sessionClient.CreateSession(ctx, userID, params)
 	if err != nil {
 		s.logger.Error("Failed to create session",
-			zap.String("user_id", userID),
+			zap.String("user_id", userID.String()),
 			zap.Error(err),
 		)
-		return "", fmt.Errorf("create session: %w", err)
+		return uuid.Nil, fmt.Errorf("create session: %w", err)
 	}
 
 	sessionID := sessionResp.SessionID
+	sessionIDStr := sessionID.String()
+	userIDStr := userID.String()
 
-	// Сохраняем сессию
+	// Сохраняем сессию в локальное хранилище (для активных чатов)
 	session := &Session{
-		SessionID: sessionID,
-		UserID:    userID,
+		SessionID: sessionIDStr,
+		UserID:    userIDStr,
 		Questions: make(chan QuestionUpdate, 10), // Буферизованный канал для вопросов
 		Results:   nil,
 	}
-	s.sessions.Store(sessionID, session)
+	s.sessions.Store(sessionIDStr, session)
 
 	// Отправляем событие начала чата в Kafka
 	requestID := uuid.New().String()
-	if err := s.kafkaProducer.SendChatStarted(sessionID, userID, requestID); err != nil {
+	if err := s.kafkaProducer.SendChatStarted(sessionIDStr, userIDStr, requestID); err != nil {
 		s.logger.Error("Failed to send chat started event",
-			zap.String("session_id", sessionID),
-			zap.String("user_id", userID),
+			zap.String("session_id", sessionIDStr),
+			zap.String("user_id", userIDStr),
 			zap.Error(err),
 		)
 		// Не возвращаем ошибку, так как сессия уже создана
 	}
 
 	s.logger.Info("Chat started",
-		zap.String("session_id", sessionID),
-		zap.String("user_id", userID),
+		zap.String("session_id", sessionIDStr),
+		zap.String("user_id", userIDStr),
 	)
 
 	return sessionID, nil
 }
 
 // SendMessage отправляет сообщение пользователя в Kafka.
-func (s *ChatService) SendMessage(ctx context.Context, sessionID, userID, content string) error {
-	// Проверяем, что сессия существует
-	if _, ok := s.sessions.Load(sessionID); !ok {
-		return fmt.Errorf("session not found: %s", sessionID)
+func (s *ChatService) SendMessage(ctx context.Context, sessionID uuid.UUID, userID uuid.UUID, content string) error {
+	sessionIDStr := sessionID.String()
+	// Проверяем, что сессия существует (для активных чатов)
+	if _, ok := s.sessions.Load(sessionIDStr); !ok {
+		// Для завершенных чатов это нормально, продолжаем
+		s.logger.Info("Session not in active sessions, continuing",
+			zap.String("session_id", sessionIDStr),
+		)
 	}
 
 	messageID := uuid.New().String()
 	requestID := uuid.New().String()
 
-	if err := s.kafkaProducer.SendUserMessage(sessionID, userID, content, messageID, requestID); err != nil {
+	if err := s.kafkaProducer.SendUserMessage(sessionIDStr, userID.String(), content, messageID, requestID); err != nil {
 		s.logger.Error("Failed to send user message",
-			zap.String("session_id", sessionID),
-			zap.String("user_id", userID),
+			zap.String("session_id", sessionIDStr),
+			zap.String("user_id", userID.String()),
 			zap.Error(err),
 		)
 		return fmt.Errorf("send message: %w", err)
 	}
 
 	s.logger.Info("User message sent",
-		zap.String("session_id", sessionID),
-		zap.String("user_id", userID),
+		zap.String("session_id", sessionIDStr),
+		zap.String("user_id", userID.String()),
 		zap.String("message_id", messageID),
 	)
 
@@ -219,4 +238,81 @@ func (s *ChatService) GetResults(sessionID string) (*ChatResults, bool) {
 		}
 	}
 	return nil, false
+}
+
+// GetInterviews получает список всех интервью пользователя (из session-crud и results-crud).
+func (s *ChatService) GetInterviews(ctx context.Context, userID uuid.UUID) ([]InterviewInfo, error) {
+	// Получаем все сессии пользователя
+	sessions, err := s.sessionCRUDCl.GetSessionsByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get sessions: %w", err)
+	}
+
+	// Получаем session IDs для запроса результатов
+	sessionIDs := make([]uuid.UUID, len(sessions))
+	for i, session := range sessions {
+		sessionIDs[i] = session.SessionID
+	}
+
+	// Получаем результаты для всех сессий
+	results, err := s.resultsCRUDCl.GetResults(ctx, sessionIDs)
+	if err != nil {
+		s.logger.Warn("Failed to get results, continuing without them",
+			zap.String("user_id", userID.String()),
+			zap.Error(err),
+		)
+		results = []client.Result{} // Продолжаем без результатов
+	}
+
+	// Создаём map для быстрого поиска результатов по session_id
+	resultsMap := make(map[uuid.UUID]client.Result)
+	for _, result := range results {
+		resultsMap[result.SessionID] = result
+	}
+
+	// Формируем ответ
+	interviews := make([]InterviewInfo, len(sessions))
+	for i, session := range sessions {
+		result, hasResult := resultsMap[session.SessionID]
+		interviews[i] = InterviewInfo{
+			SessionID:  session.SessionID,
+			StartTime:  session.StartTime,
+			EndTime:    session.EndTime,
+			Params:     session.Params,
+			HasResults: hasResult,
+			Score:      result.Score,
+			Feedback:   result.Feedback,
+		}
+	}
+
+	return interviews, nil
+}
+
+// InterviewInfo представляет информацию об интервью для списка.
+type InterviewInfo struct {
+	SessionID  uuid.UUID            `json:"session_id"`
+	StartTime  time.Time            `json:"start_time"`
+	EndTime    *time.Time           `json:"end_time,omitempty"`
+	Params     client.SessionParams `json:"params"`
+	HasResults bool                 `json:"has_results"`
+	Score      int                  `json:"score,omitempty"`
+	Feedback   string               `json:"feedback,omitempty"`
+}
+
+// GetChatHistory получает историю чата по session_id (из chat-crud).
+func (s *ChatService) GetChatHistory(ctx context.Context, sessionID uuid.UUID) ([]client.ChatMessage, error) {
+	messages, err := s.chatCRUDCl.GetMessages(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("get messages: %w", err)
+	}
+	return messages, nil
+}
+
+// GetChatResult получает результат интервью по session_id (из results-crud).
+func (s *ChatService) GetChatResult(ctx context.Context, sessionID uuid.UUID) (*client.Result, error) {
+	result, err := s.resultsCRUDCl.GetResult(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("get result: %w", err)
+	}
+	return result, nil
 }

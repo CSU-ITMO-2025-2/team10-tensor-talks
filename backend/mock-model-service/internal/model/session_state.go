@@ -3,12 +3,16 @@ package model
 import (
 	"sync"
 	"time"
+
+	"github.com/tensor-talks/mock-model-service/internal/models"
 )
 
 // SessionState хранит состояние сессии чата.
 type SessionState struct {
 	SessionID      string
 	UserID         string
+	Program        *models.InterviewProgram // Программа интервью
+	CurrentIndex   int                      // Текущий индекс вопроса в программе
 	QuestionsAsked int
 	LastQuestionAt time.Time
 	StartedAt      time.Time
@@ -34,6 +38,8 @@ func (sm *SessionManager) GetOrCreate(sessionID, userID string) *SessionState {
 	newState := &SessionState{
 		SessionID:      sessionID,
 		UserID:         userID,
+		Program:        nil,
+		CurrentIndex:   0,
 		QuestionsAsked: 0,
 		StartedAt:      time.Now(),
 		LastQuestionAt: time.Time{},
@@ -41,6 +47,50 @@ func (sm *SessionManager) GetOrCreate(sessionID, userID string) *SessionState {
 
 	sm.sessions.Store(sessionID, newState)
 	return newState
+}
+
+// SetProgram устанавливает программу интервью для сессии.
+func (sm *SessionManager) SetProgram(sessionID string, program *models.InterviewProgram) {
+	if state, ok := sm.sessions.Load(sessionID); ok {
+		s := state.(*SessionState)
+		s.mu.Lock()
+		s.Program = program
+		s.CurrentIndex = 0
+		s.mu.Unlock()
+	}
+}
+
+// GetNextQuestion возвращает следующий вопрос из программы и увеличивает индекс.
+func (sm *SessionManager) GetNextQuestion(sessionID string) (string, bool) {
+	if state, ok := sm.sessions.Load(sessionID); ok {
+		s := state.(*SessionState)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if s.Program == nil || s.CurrentIndex >= len(s.Program.Questions) {
+			return "", false
+		}
+
+		question := s.Program.Questions[s.CurrentIndex].Question
+		s.CurrentIndex++
+		return question, true
+	}
+	return "", false
+}
+
+// HasMoreQuestions проверяет, есть ли ещё вопросы в программе.
+func (sm *SessionManager) HasMoreQuestions(sessionID string) bool {
+	if state, ok := sm.sessions.Load(sessionID); ok {
+		s := state.(*SessionState)
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+
+		if s.Program == nil {
+			return false
+		}
+		return s.CurrentIndex < len(s.Program.Questions)
+	}
+	return false
 }
 
 // IncrementQuestion увеличивает счётчик вопросов.
@@ -70,7 +120,7 @@ func (sm *SessionManager) Delete(sessionID string) {
 	sm.sessions.Delete(sessionID)
 }
 
-// ShouldComplete проверяет, нужно ли завершить чат.
-func (sm *SessionManager) ShouldComplete(sessionID string, maxQuestions int) bool {
-	return sm.GetQuestionCount(sessionID) >= maxQuestions
+// ShouldComplete проверяет, нужно ли завершить чат (все вопросы заданы).
+func (sm *SessionManager) ShouldComplete(sessionID string) bool {
+	return !sm.HasMoreQuestions(sessionID)
 }
