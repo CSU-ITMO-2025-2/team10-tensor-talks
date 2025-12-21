@@ -263,7 +263,7 @@ Kafka используется для асинхронной обработки 
   "event_id": "evt-build-002",
   "event_type": "interview.build.response",
   "timestamp": "2025-01-15T10:30:05.456Z",
-  "service": "mock-interview-builder-service",
+  "service": "interview-builder-service",
   "version": "1.0.0",
   "payload": {
     "session_id": "session-xyz789",

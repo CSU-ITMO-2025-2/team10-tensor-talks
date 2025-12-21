@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import type { MouseEvent } from 'react'
 import MVPNotification from '../components/MVPNotification'
+import InterviewParamsModal, { type InterviewParams } from '../components/InterviewParamsModal'
 import { startChat, getInterviews, type InterviewInfo } from '../services/chat'
 
 function Card({ children }: { children: React.ReactNode }) {
@@ -15,6 +16,7 @@ export default function Dashboard() {
   const [interviews, setInterviews] = useState<InterviewInfo[]>([])
   const [isLoadingInterviews, setIsLoadingInterviews] = useState(false)
   const [userLogin, setUserLogin] = useState<string | null>(null)
+  const [showParamsModal, setShowParamsModal] = useState(false)
   
   const handleFeatureClick = (e?: MouseEvent) => {
     e?.preventDefault()
@@ -24,54 +26,45 @@ export default function Dashboard() {
   }
 
   const handleStartInterview = async (e?: MouseEvent) => {
-    console.log('handleStartInterview called', e)
     e?.preventDefault()
     e?.stopPropagation()
-    
-    // КРИТИЧНО: Убеждаемся, что MVPNotification не показывается
-    // Делаем это синхронно, до любых асинхронных операций
     setShowMVPPopup(false)
-    console.log('MVP popup closed, showMVPPopup should be false now')
-    
-    // Дополнительная проверка через setTimeout для гарантии
-    setTimeout(() => {
-      setShowMVPPopup(false)
-    }, 0)
+    setShowParamsModal(true)
+  }
+
+  const handleConfirmParams = async (params: InterviewParams) => {
+    setShowParamsModal(false)
     
     const userStr = localStorage.getItem('tt_user')
-    console.log('User from localStorage:', userStr ? 'exists' : 'not found')
-    
     if (!userStr) {
-      console.log('No user, navigating to auth')
       navigate('/auth')
       return
     }
 
     try {
       const user = JSON.parse(userStr)
-      console.log('Parsed user:', user)
-      
       if (!user || !user.id) {
-        console.error('Invalid user data:', user)
         alert('Ошибка: пользователь не найден. Пожалуйста, войдите снова.')
         navigate('/auth')
         return
       }
 
-      console.log('Starting chat for user:', user.id)
-      // Параметры интервью по умолчанию
+      // Преобразуем topic в topics массив для API
+      const topicMap: Record<string, string[]> = {
+        classic_ml: ['classic_ml'],
+        nlp: ['nlp'],
+        llm: ['llm'],
+      }
+
       const response = await startChat(user.id, {
-        topics: ['ML Basics'],
-        level: 'middle',
-        type: 'interview'
+        topics: topicMap[params.topic] || ['classic_ml'],
+        level: params.level,
+        type: params.type,
       })
-      console.log('Chat started, response:', response)
       
       if (response && response.session_id) {
-        console.log('Navigating to chat:', `/chat/${response.session_id}`)
         navigate(`/chat/${response.session_id}`)
       } else {
-        console.error('Invalid response:', response)
         alert('Ошибка: неверный ответ от сервера')
       }
     } catch (error: any) {
@@ -140,6 +133,11 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
       <MVPNotification isOpen={showMVPPopup} onClose={() => setShowMVPPopup(false)} />
+      <InterviewParamsModal
+        isOpen={showParamsModal}
+        onClose={() => setShowParamsModal(false)}
+        onConfirm={handleConfirmParams}
+      />
       <header className="border-b border-orange-100 bg-white/70 backdrop-blur">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center">
           <Link to="/" className="flex items-center gap-3">
@@ -234,17 +232,7 @@ export default function Dashboard() {
             <div className="flex flex-wrap gap-3">
               <button 
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  console.log('=== BUTTON CLICKED ===')
-                  console.log('Event:', e)
-                  console.log('Calling handleStartInterview')
-                  setShowMVPPopup(false)
-                  handleStartInterview(e).catch(err => {
-                    console.error('Error in handleStartInterview:', err)
-                  })
-                }} 
+                onClick={handleStartInterview}
                 className="px-4 py-2 rounded-lg bg-gradient-to-r from-orange-600 to-rose-600 text-white hover:from-orange-700 hover:to-rose-700"
               >
                 Начать новое интервью

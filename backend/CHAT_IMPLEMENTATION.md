@@ -73,13 +73,17 @@ CRUD микросервис для сессий интервью в PostgreSQL.
   - При получении программы: сначала Redis, если нет — из CRUD (с кэшированием)
   - При закрытии: удаление из Redis, обновление в CRUD
 
-#### 3. mock-interview-builder-service ✅ (базовая структура)
-Сервис для создания программы интервью через Kafka очереди.
+#### 3. interview-builder-service ✅
+Python FastAPI сервис для динамического создания программы интервью.
 
 **Функциональность:**
 - Слушает очередь `interview.build.request`
-- Возвращает статичную программу интервью в очередь `interview.build.response`
-- В будущем: динамическая генерация программы на основе параметров
+- Получает параметры интервью (topics, level, type)
+- Запрашивает вопросы из questions-crud-service по фильтрам
+- Запрашивает знания из knowledge-base-crud-service для каждого вопроса
+- Собирает программу интервью (5 вопросов по умолчанию)
+- Упорядочивает вопросы по логике (связанные вопросы рядом)
+- Отправляет программу в очередь `interview.build.response`
 
 **Формат события interview.build.request:**
 ```json
@@ -106,7 +110,7 @@ CRUD микросервис для сессий интервью в PostgreSQL.
   "event_id": "uuid",
   "event_type": "interview.build.response",
   "timestamp": "ISO8601",
-  "service": "mock-interview-builder-service",
+  "service": "interview-builder-service",
   "version": "1.0.0",
   "payload": {
     "session_id": "uuid",

@@ -40,12 +40,36 @@
    - Хранит результаты интервью (score, feedback).
    - Предоставляет API для сохранения и получения результатов.
 
-7. **mock-interview-builder-service**
-   - Сервис для создания программы интервью.
-   - Работает с Kafka очередями: слушает запросы на создание программы и отправляет готовую программу.
-   - Пока возвращает статичную программу интервью (в будущем - динамическая генерация).
+7. **interview-builder-service**
+   - Python FastAPI сервис для динамического создания программы интервью.
+   - Слушает Kafka топик `interview.build.request`.
+   - Получает параметры интервью (topics, level, type).
+   - Запрашивает вопросы из questions-crud-service по фильтрам.
+   - Запрашивает знания из knowledge-base-crud-service для каждого вопроса.
+   - Собирает программу интервью (5 вопросов по умолчанию).
+   - Упорядочивает вопросы по логике (связанные вопросы рядом).
+   - Отправляет программу в Kafka топик `interview.build.response`.
 
-8. **mock-model-service** (будущий marking-service)
+8. **knowledge-base-crud-service**
+   - Go микросервис для работы с базой знаний в PostgreSQL.
+   - CRUD операции над знаниями (создание, чтение, обновление, удаление).
+   - Поиск знаний по фильтрам: complexity, concept, parent_id, tags.
+   - Хранение структурированных знаний в JSONB формате.
+
+9. **questions-crud-service**
+   - Go микросервис для работы с базой вопросов в PostgreSQL.
+   - CRUD операции над вопросами (создание, чтение, обновление, удаление).
+   - Поиск вопросов по фильтрам: complexity, theory_id, question_type.
+   - Хранение структурированных вопросов в JSONB формате.
+
+10. **knowledge-producer-service**
+    - Python FastAPI сервис для заполнения баз знаний и вопросов.
+    - Автоматически загружает данные из JSON файлов при старте.
+    - Проверяет на дубликаты по ID.
+    - Проверяет версии для обновления.
+    - Сохраняет в knowledge-base-crud-service и questions-crud-service.
+
+11. **mock-model-service** (будущий marking-service)
    - Заглушка AI-модели для обработки чатов.
    - Читает события из Kafka (`chat.events.out`) и отправляет ответы в Kafka (`chat.events.in`).
    - Получает программу интервью от `session-service` по REST API.
@@ -53,7 +77,7 @@
    - Сохраняет результаты интервью в `results-crud-service`.
    - Закрывает сессии через `session-service` при завершении интервью.
 
-9. **bff-service**
+12. **bff-service**
    - **Backend-for-frontend**, предоставляющий фронтенду стабильное REST API.
    - Проксирует запросы аутентификации в `auth-service`, скрывая внутреннюю топологию сервисов.
    - Управляет чатами: создаёт сессии через `session-service`, отправляет события в Kafka.
@@ -117,6 +141,32 @@
 | created_at| TIMESTAMP | Время создания                                               |
 | updated_at| TIMESTAMP | Время обновления                                             |
 
+**knowledge_base_crud_db** — хранит структурированные знания:
+
+| Колонка   | Тип        | Описание                                                     |
+|-----------|-----------|--------------------------------------------------------------|
+| id        | VARCHAR PK| Идентификатор знания                                         |
+| concept   | VARCHAR   | Название концепции                                           |
+| complexity| INTEGER   | Сложность (1-3)                                              |
+| parent_id | VARCHAR   | ID родительского знания (nullable, indexed)                  |
+| data      | JSONB     | Структурированные данные знания (segments, relations, metadata) |
+| version   | VARCHAR   | Версия знания                                                |
+| created_at| TIMESTAMP | Время создания                                               |
+| updated_at| TIMESTAMP | Время обновления                                             |
+
+**questions_crud_db** — хранит вопросы интервью:
+
+| Колонка      | Тип        | Описание                                                     |
+|--------------|-----------|--------------------------------------------------------------|
+| id           | VARCHAR PK| Идентификатор вопроса                                        |
+| theory_id    | VARCHAR   | ID связанного знания (nullable, indexed)                    |
+| question_type| VARCHAR   | Тип вопроса (conceptual, practical, coding)                  |
+| complexity   | INTEGER   | Сложность (1-3)                                              |
+| data         | JSONB     | Структурированные данные вопроса (content, ideal_answer, metadata) |
+| version      | VARCHAR   | Версия вопроса                                               |
+| created_at   | TIMESTAMP | Время создания                                               |
+| updated_at   | TIMESTAMP | Время обновления                                             |
+
 ### Очереди Kafka
 
 Используются четыре топика для асинхронной обработки событий:
@@ -140,7 +190,10 @@
   - `SESSION_CRUD_...` для `session-crud-service`;
   - `CHAT_CRUD_...` для `chat-crud-service`;
   - `RESULTS_CRUD_...` для `results-crud-service`;
-  - `MOCK_INTERVIEW_BUILDER_...` для `mock-interview-builder-service`;
+  - `INTERVIEW_BUILDER_...` для `interview-builder-service`;
+  - `KNOWLEDGE_BASE_CRUD_...` для `knowledge-base-crud-service`;
+  - `QUESTIONS_CRUD_...` для `questions-crud-service`;
+  - `KNOWLEDGE_PRODUCER_...` для `knowledge-producer-service`;
   - `MOCK_MODEL_...` для `mock-model-service`;
   - `BFF_...` для `bff-service`.
 
@@ -158,10 +211,13 @@
   - `session-crud-service` — CRUD для сессий;
   - `chat-crud-service` — CRUD для чатов;
   - `results-crud-service` — CRUD для результатов;
-  - `mock-interview-builder-service` — создание программы интервью;
+  - `interview-builder-service` — динамическое создание программы интервью (Python FastAPI);
+  - `knowledge-base-crud-service` — CRUD для базы знаний;
+  - `questions-crud-service` — CRUD для базы вопросов;
+  - `knowledge-producer-service` — заполнение баз знаний и вопросов из JSON файлов (Python FastAPI);
   - `mock-model-service` — заглушка AI-модели для обработки чатов;
   - `user-store-service` — CRUD над таблицей пользователей;
-  - PostgreSQL (несколько БД: user_store_db, session_crud_db, chat_crud_db, results_crud_db);
+  - PostgreSQL (несколько БД: user_store_db, session_crud_db, chat_crud_db, results_crud_db, knowledge_base_crud_db, questions_crud_db);
   - Redis — кэширование активных сессий;
   - Kafka + Zookeeper для очередей;
   - Kafdrop — веб-интерфейс для просмотра Kafka (http://localhost:9000);
@@ -232,9 +288,11 @@
 - фронтенд никогда не обращается напрямую к внутренним сервисам — только к `bff-service`;
 - `auth-service` не имеет прямого доступа к PostgreSQL и использует `user-store-service`;
 - `user-store-service` — единственная точка доступа к таблице `users`;
-- `session-service` (session-manager) управляет жизненным циклом сессий, кэширует активные сессии в Redis, координирует создание программы интервью через Kafka с `mock-interview-builder-service`;
+- `session-service` (session-manager) управляет жизненным циклом сессий, кэширует активные сессии в Redis, координирует создание программы интервью через Kafka с `interview-builder-service`;
 - `session-crud-service`, `chat-crud-service`, `results-crud-service` — CRUD сервисы для персистентного хранения данных в отдельных PostgreSQL БД;
-- `mock-interview-builder-service` создаёт программу интервью через Kafka очереди (`interview.build.request/response`);
+- `knowledge-base-crud-service`, `questions-crud-service` — CRUD сервисы для базы знаний и вопросов;
+- `knowledge-producer-service` автоматически заполняет базы знаний и вопросов из JSON файлов при старте;
+- `interview-builder-service` создаёт программу интервью через Kafka очереди (`interview.build.request/response`), запрашивая вопросы и знания из соответствующих CRUD сервисов;
 - `bff-service` управляет чатами через `session-service`, получает историю из `chat-crud-service` и результаты из `results-crud-service`;
 - `mock-model-service` (будущий `marking-service`) обрабатывает события чатов, получает программу интервью от session-manager, сохраняет сообщения в `chat-crud-service` и результаты в `results-crud-service`;
 - все сервисы конфигурируются через Viper и запускаются в отдельных контейнерах.
@@ -275,7 +333,10 @@
 - `session-crud-service`
 - `chat-crud-service`
 - `results-crud-service`
-- `mock-interview-builder-service`
+- `interview-builder-service`
+- `knowledge-base-crud-service`
+- `questions-crud-service`
+- `knowledge-producer-service`
 - `mock-model-service`
 
 Дополнительная документация:

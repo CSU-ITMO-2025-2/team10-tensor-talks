@@ -69,6 +69,19 @@ func (s *ModelService) HandleChatStarted(ctx context.Context, sessionID, userID 
 		zap.Int("questions_count", len(program.Questions)),
 	)
 
+	// DEBUG: Log first question structure
+	if len(program.Questions) > 0 {
+		firstQ := program.Questions[0]
+		s.logger.Warn("DEBUG: First question in program",
+			zap.String("session_id", sessionID),
+			zap.String("question", firstQ.Question),
+			zap.Int("question_length", len(firstQ.Question)),
+			zap.String("theory", firstQ.Theory),
+			zap.Int("theory_length", len(firstQ.Theory)),
+			zap.Int("order", firstQ.Order),
+		)
+	}
+
 	// Создаём или получаем состояние сессии и устанавливаем программу
 	s.sessionMgr.GetOrCreate(sessionID, userID)
 	s.sessionMgr.SetProgram(sessionID, program)
