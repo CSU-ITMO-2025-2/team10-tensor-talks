@@ -23,7 +23,7 @@ async function request<T>(path: string, options: RequestInit): Promise<T> {
 }
 
 export interface SessionParams {
-  topics: string[];
+  topics: string[]; // classic_ml, nlp, llm
   level: string; // junior, middle, senior
   type: string;  // interview, training
 }

@@ -26,11 +26,17 @@ type SessionClient struct {
 }
 
 // NewSessionClient создаёт новый клиент для session-manager-service.
+// Note: HTTP client timeout should be longer than context timeout to allow context to control cancellation.
 func NewSessionClient(baseURL string, timeoutSeconds int) *SessionClient {
+	// Use a longer timeout than context to let context control cancellation
+	clientTimeout := time.Duration(timeoutSeconds+10) * time.Second
+	if timeoutSeconds == 0 {
+		clientTimeout = 45 * time.Second
+	}
 	return &SessionClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: time.Duration(timeoutSeconds) * time.Second,
+			Timeout: clientTimeout,
 		},
 	}
 }

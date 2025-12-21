@@ -1,6 +1,6 @@
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { sendMessage, startChat, getNextQuestion, getResults, type ResultsResponse } from '../services/chat'
+import { sendMessage, getNextQuestion, getResults, type ResultsResponse } from '../services/chat'
 
 interface Message {
   id: string
@@ -15,7 +15,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [sessionId, setSessionId] = useState<string | null>(id || null)
+  const [sessionId] = useState<string | null>(id || null)
   const [userId, setUserId] = useState<string | null>(null)
   const [chatCompleted, setChatCompleted] = useState(false)
   const [results, setResults] = useState<ResultsResponse | null>(null)
@@ -88,7 +88,7 @@ export default function Chat() {
 
     // Если сессии нет, создаём новую
     if (!sessionId) {
-      startNewChat(user.id)
+      startNewChat()
     } else {
       // Запускаем polling для получения вопросов
       startPolling()
@@ -102,25 +102,9 @@ export default function Chat() {
     }
   }, [sessionId, navigate, startPolling])
 
-  const startNewChat = async (userId: string) => {
-    try {
-      setIsLoading(true)
-      // Параметры интервью по умолчанию
-      const response = await startChat(userId, {
-        topics: ['ML Basics'],
-        level: 'middle',
-        type: 'interview'
-      })
-      setSessionId(response.session_id)
-      navigate(`/chat/${response.session_id}`, { replace: true })
-      // Запускаем polling после создания сессии
-      setTimeout(() => startPolling(), 1000)
-    } catch (error) {
-      console.error('Failed to start chat:', error)
-      alert('Не удалось начать чат. Попробуйте еще раз.')
-    } finally {
-      setIsLoading(false)
-    }
+  const startNewChat = () => {
+    // Если нет сессии, перенаправляем на дашборд для выбора параметров
+    navigate('/dashboard')
   }
 
   const handleSend = async () => {

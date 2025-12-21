@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -253,7 +254,10 @@ func (h *Handler) startChat(c *gin.Context) {
 	}
 
 	h.logger.Info("Start chat request", zap.String("user_id", req.UserID.String()))
-	sessionID, err := h.chat.StartChat(c.Request.Context(), req.UserID, req.Params)
+	// Create a context with timeout for session creation (allows time for interview program building)
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	sessionID, err := h.chat.StartChat(ctx, req.UserID, req.Params)
 	if err != nil {
 		if err.Error() == "max active sessions reached" {
 			h.logger.Warn("Start chat failed: max active sessions reached", zap.String("user_id", req.UserID.String()))

@@ -92,11 +92,34 @@ TensorTalks помогает ML-специалистам и компаниям �
   - хранит результаты интервью (score, feedback);
   - предоставляет API для сохранения и получения результатов.
 
-- **Mock Interview Builder Service (mock-interview-builder-service)**  
-  Сервис для создания программы интервью:
-  - работает через Kafka очереди (interview.build.request/response);
-  - возвращает программу интервью для сессии;
-  - в будущем: динамическая генерация программ.
+- **Interview Builder Service (interview-builder-service)**  
+  Python FastAPI сервис для динамического создания программы интервью:
+  - слушает Kafka топик `interview.build.request`;
+  - получает параметры интервью (topics, level, type);
+  - запрашивает вопросы из questions-crud-service по фильтрам;
+  - запрашивает знания из knowledge-base-crud-service для каждого вопроса;
+  - собирает программу интервью (5 вопросов по умолчанию);
+  - упорядочивает вопросы по логике;
+  - отправляет программу в Kafka топик `interview.build.response`.
+
+- **Knowledge Base CRUD Service (knowledge-base-crud-service)**  
+  Go микросервис для работы с базой знаний в PostgreSQL:
+  - CRUD операции над знаниями;
+  - поиск знаний по фильтрам (complexity, concept, parent_id, tags);
+  - хранение структурированных знаний в JSONB формате.
+
+- **Questions CRUD Service (questions-crud-service)**  
+  Go микросервис для работы с базой вопросов в PostgreSQL:
+  - CRUD операции над вопросами;
+  - поиск вопросов по фильтрам (complexity, theory_id, question_type);
+  - хранение структурированных вопросов в JSONB формате.
+
+- **Knowledge Producer Service (knowledge-producer-service)**  
+  Python FastAPI сервис для заполнения баз знаний и вопросов:
+  - автоматически загружает данные из JSON файлов при старте;
+  - проверяет на дубликаты по ID;
+  - проверяет версии для обновления;
+  - сохраняет в knowledge-base-crud-service и questions-crud-service.
 
 - **Mock Model Service (mock-model-service, будущий marking-service)**  
   Заглушка AI-модели для обработки чатов:
@@ -111,7 +134,9 @@ TensorTalks помогает ML-специалистам и компаниям �
   - `user_store_db` — таблица `users` с полями `id`, `external_id` (UUID), `login`, `password_hash`;
   - `session_crud_db` — таблица `sessions` с информацией о сессиях и программах интервью;
   - `chat_crud_db` — таблицы `messages` и `chat_dumps` для истории чатов;
-  - `results_crud_db` — таблица `results` для результатов интервью.
+  - `results_crud_db` — таблица `results` для результатов интервью;
+  - `knowledge_base_crud_db` — таблица `knowledge` для структурированных знаний;
+  - `questions_crud_db` — таблица `questions` для вопросов интервью.
 
 - **Redis**  
   Кэширование активных сессий для быстрого доступа к программам интервью.
@@ -125,12 +150,13 @@ TensorTalks помогает ML-специалистам и компаниям �
 
 ### Стек backend
 
-- Язык: **Go**
-- HTTP: **Gin**
-- ORM: **GORM**
-- Конфигурация: **Viper**
-- Тестирование: **Testify**
-- БД: **PostgreSQL**
+- Языки: **Go** (основные сервисы), **Python** (FastAPI для interview-builder и knowledge-producer)
+- HTTP: **Gin** (Go), **FastAPI** (Python)
+- ORM: **GORM** (Go)
+- Конфигурация: **Viper** (Go), **Pydantic Settings** (Python)
+- Логирование: **Zap** (Go), **structlog** (Python)
+- Тестирование: **Testify** (Go)
+- БД: **PostgreSQL** (JSONB для гибких схем)
 - Очереди: **Kafka** (с Zookeeper)
 - Мониторинг: **Prometheus**, **Grafana**, **Loki**
 - Контейнеризация: **Docker**, `docker-compose`
@@ -201,10 +227,15 @@ frontend/
 - [x] Управление сессиями с Redis кэшированием
 - [x] Система создания программы интервью через Kafka
 - [x] Просмотр истории завершенных интервью и результатов
+- [x] Динамическая генерация программ интервью на основе уровня и темы
+- [x] База знаний и вопросов с CRUD сервисами
+- [x] Автоматическое заполнение баз при старте
+- [x] Фильтрация вопросов по сложности и темам
 
 ### 🔄 В разработке
 - [ ] WebSocket интеграция для real-time обновлений
-- [ ] Реальная AI-модель (замена mock-model-service и mock-interview-builder-service)
+- [ ] Реальная AI-модель (замена mock-model-service)
+- [ ] Интеграция с LangGraph для улучшенной генерации интервью
 - [ ] Расширенная база вопросов уровня FAANG
 - [ ] Интеграции с HR-системами
 

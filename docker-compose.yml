@@ -67,6 +67,40 @@ services:
       retries: 10
       start_period: 5s
 
+  postgres-knowledge:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: knowledge_base_crud_db
+      POSTGRES_USER: knowledge_base_crud
+      POSTGRES_PASSWORD: knowledge_base_crud_password
+    volumes:
+      - postgres_knowledge_data:/var/lib/postgresql/data
+    ports:
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knowledge_base_crud -d knowledge_base_crud_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  postgres-questions:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: questions_crud_db
+      POSTGRES_USER: questions_crud
+      POSTGRES_PASSWORD: questions_crud_password
+    volumes:
+      - postgres_questions_data:/var/lib/postgresql/data
+    ports:
+      - "5437:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U questions_crud -d questions_crud_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
   redis-sessions:
     image: redis:7-alpine
     ports:
@@ -182,18 +216,85 @@ services:
     ports:
       - "8088:8088"
 
-  mock-interview-builder-service:
+  knowledge-base-crud-service:
     build:
-      context: ./backend/mock-interview-builder-service
+      context: ./backend/knowledge-base-crud-service
     environment:
-      INTERVIEW_BUILDER_SERVER_HOST: "0.0.0.0"
-      INTERVIEW_BUILDER_SERVER_PORT: "8089"
-      INTERVIEW_BUILDER_KAFKA_BROKERS: kafka:9092
-      INTERVIEW_BUILDER_KAFKA_TOPIC_REQUEST: interview.build.request
-      INTERVIEW_BUILDER_KAFKA_TOPIC_RESPONSE: interview.build.response
-      INTERVIEW_BUILDER_KAFKA_CONSUMER_GROUP: interview-builder-service-group
+      KNOWLEDGE_BASE_CRUD_SERVER_HOST: "0.0.0.0"
+      KNOWLEDGE_BASE_CRUD_SERVER_PORT: "8090"
+      KNOWLEDGE_BASE_CRUD_DATABASE_HOST: postgres-knowledge
+      KNOWLEDGE_BASE_CRUD_DATABASE_PORT: "5432"
+      KNOWLEDGE_BASE_CRUD_DATABASE_USER: knowledge_base_crud
+      KNOWLEDGE_BASE_CRUD_DATABASE_PASSWORD: knowledge_base_crud_password
+      KNOWLEDGE_BASE_CRUD_DATABASE_NAME: knowledge_base_crud_db
+      KNOWLEDGE_BASE_CRUD_DATABASE_SSL_MODE: disable
+    depends_on:
+      postgres-knowledge:
+        condition: service_healthy
+    ports:
+      - "8090:8090"
+
+  questions-crud-service:
+    build:
+      context: ./backend/questions-crud-service
+    environment:
+      QUESTIONS_CRUD_SERVER_HOST: "0.0.0.0"
+      QUESTIONS_CRUD_SERVER_PORT: "8091"
+      QUESTIONS_CRUD_DATABASE_HOST: postgres-questions
+      QUESTIONS_CRUD_DATABASE_PORT: "5432"
+      QUESTIONS_CRUD_DATABASE_USER: questions_crud
+      QUESTIONS_CRUD_DATABASE_PASSWORD: questions_crud_password
+      QUESTIONS_CRUD_DATABASE_NAME: questions_crud_db
+      QUESTIONS_CRUD_DATABASE_SSL_MODE: disable
+    depends_on:
+      postgres-questions:
+        condition: service_healthy
+    ports:
+      - "8091:8091"
+
+  knowledge-producer-service:
+    build:
+      context: ./backend/knowledge-producer-service
+    environment:
+      KNOWLEDGE_BASE_CRUD_URL: http://knowledge-base-crud-service:8090
+      QUESTIONS_CRUD_URL: http://questions-crud-service:8091
+      KNOWLEDGE_DATA_PATH: /app/data/knowledge
+      QUESTIONS_DATA_PATH: /app/data/questions
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "8092"
+      AUTO_LOAD_ON_STARTUP: "true"
+      STARTUP_LOAD_RETRY_DELAY: "5"
+      STARTUP_LOAD_MAX_RETRIES: "10"
+    volumes:
+      - ./backend/common/knowledge:/app/data/knowledge:ro
+      - ./backend/common/questions:/app/data/questions:ro
+    depends_on:
+      knowledge-base-crud-service:
+        condition: service_started
+      questions-crud-service:
+        condition: service_started
+    ports:
+      - "8092:8092"
+
+  interview-builder-service:
+    build:
+      context: ./backend/interview-builder-service
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_REQUEST: interview.build.request
+      KAFKA_TOPIC_RESPONSE: interview.build.response
+      KAFKA_CONSUMER_GROUP: interview-builder-service-group
+      QUESTIONS_CRUD_URL: http://questions-crud-service:8091
+      KNOWLEDGE_BASE_CRUD_URL: http://knowledge-base-crud-service:8090
+      QUESTIONS_PER_INTERVIEW: "5"
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "8089"
     depends_on:
       kafka:
+        condition: service_started
+      questions-crud-service:
+        condition: service_started
+      knowledge-base-crud-service:
         condition: service_started
     ports:
       - "8089:8089"
@@ -293,7 +394,9 @@ services:
       - session-crud-service
       - chat-crud-service
       - results-crud-service
-      - mock-interview-builder-service
+      - knowledge-base-crud-service
+      - questions-crud-service
+      - interview-builder-service
       - mock-model-service
 
   grafana:
@@ -449,6 +552,8 @@ volumes:
   postgres_sessions_data:
   postgres_chats_data:
   postgres_results_data:
+  postgres_knowledge_data:
+  postgres_questions_data:
   redis_data:
   redis_sessions_data:
   prometheus_data:
