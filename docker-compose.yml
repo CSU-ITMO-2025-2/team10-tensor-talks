@@ -67,6 +67,18 @@ services:
       retries: 10
       start_period: 5s
 
+  redis-sessions:
+    image: redis:7-alpine
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_sessions_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     ports:
@@ -192,7 +204,7 @@ services:
     environment:
       SESSION_SERVER_HOST: "0.0.0.0"
       SESSION_SERVER_PORT: "8083"
-      SESSION_REDIS_ADDR: redis:6379
+      SESSION_REDIS_ADDR: redis-sessions:6379
       SESSION_REDIS_PASSWORD: ""
       SESSION_REDIS_DB: "0"
       SESSION_REDIS_TTL_HOURS: "24"
@@ -205,7 +217,7 @@ services:
       SESSION_SESSION_MANAGER_MAX_ACTIVE_SESSIONS: "100"
       SESSION_SESSION_MANAGER_PROGRAM_TIMEOUT_SECONDS: "30"
     depends_on:
-      redis:
+      redis-sessions:
         condition: service_healthy
       session-crud-service:
         condition: service_started
@@ -380,19 +392,6 @@ services:
     ports:
       - "8084:8084"
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
   dialogue-aggregator:
     build:
       context: ./backend/dialogue-aggregator
@@ -451,8 +450,8 @@ volumes:
   postgres_chats_data:
   postgres_results_data:
   redis_data:
+  redis_sessions_data:
   prometheus_data:
   grafana_data:
   loki_data:
-  redis_data:
 

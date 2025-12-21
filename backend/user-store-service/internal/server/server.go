@@ -49,9 +49,7 @@ func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
 		zap.String("database", cfg.Database.Name),
 	)
 
-	db, err := gorm.Open(postgres.Open(cfg.Database.DSN()), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
-	})
+	db, err := gorm.Open(postgres.Open(cfg.Database.DSN()), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("connect database: %w", err)
 	}
