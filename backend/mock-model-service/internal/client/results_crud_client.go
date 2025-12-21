@@ -30,17 +30,19 @@ func NewResultsCRUDClient(baseURL string, timeoutSeconds int) *ResultsCRUDClient
 
 // SaveResultRequest запрос на сохранение результата.
 type SaveResultRequest struct {
-	SessionID uuid.UUID `json:"session_id"`
-	Score     int       `json:"score"`
-	Feedback  string    `json:"feedback"`
+	SessionID       uuid.UUID `json:"session_id"`
+	Score           int       `json:"score"`
+	Feedback        string    `json:"feedback"`
+	TerminatedEarly bool      `json:"terminated_early,omitempty"`
 }
 
 // SaveResult сохраняет результат интервью в results-crud-service.
-func (c *ResultsCRUDClient) SaveResult(ctx context.Context, sessionID uuid.UUID, score int, feedback string) error {
+func (c *ResultsCRUDClient) SaveResult(ctx context.Context, sessionID uuid.UUID, score int, feedback string, terminatedEarly bool) error {
 	reqBody := SaveResultRequest{
-		SessionID: sessionID,
-		Score:     score,
-		Feedback:  feedback,
+		SessionID:       sessionID,
+		Score:           score,
+		Feedback:        feedback,
+		TerminatedEarly: terminatedEarly,
 	}
 
 	jsonData, err := json.Marshal(reqBody)

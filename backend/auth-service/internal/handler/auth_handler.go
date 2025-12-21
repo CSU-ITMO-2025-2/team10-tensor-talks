@@ -40,6 +40,7 @@ func (h *AuthHandler) RegisterRoutes(router gin.IRouter) {
 	router.POST("/auth/register", h.Register)
 	router.POST("/auth/login", h.Login)
 	router.POST("/auth/refresh", h.Refresh)
+	router.POST("/auth/logout", h.Logout)
 	router.GET("/auth/me", h.Me)
 }
 
@@ -201,7 +202,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		return
 	}
 
-	claims, err := h.svc.ValidateToken(token)
+	claims, err := h.svc.ValidateToken(c.Request.Context(), token)
 	if err != nil {
 		metrics.BusinessTokenValidationErrorsTotal.WithLabelValues("auth-service", "invalid").Inc()
 		h.logger.Warn("Token validation failed: invalid token")
@@ -241,4 +242,46 @@ func extractBearer(header string) string {
 		return ""
 	}
 	return strings.TrimSpace(parts[1])
+}
+
+type logoutRequest struct {
+	SessionID string `json:"session_id" binding:"required"`
+}
+
+// Logout обрабатывает POST /auth/logout.
+// Удаляет сессию пользователя из Redis, делая токен невалидным.
+func (h *AuthHandler) Logout(c *gin.Context) {
+	token := extractBearer(c.GetHeader("Authorization"))
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
+		return
+	}
+
+	// Валидируем токен и извлекаем userID и sessionID
+	claims, err := h.svc.ValidateToken(c.Request.Context(), token)
+	if err != nil {
+		h.logger.Warn("Logout: invalid token")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		return
+	}
+
+	var req logoutRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Если session_id не указан, используем jti из токена
+		req.SessionID = claims.ID
+	}
+
+	if req.SessionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "session_id required"})
+		return
+	}
+
+	if err := h.svc.Logout(c.Request.Context(), claims.UserID, req.SessionID); err != nil {
+		h.logger.Error("Logout failed", zap.Error(err), zap.String("user_id", claims.UserID.String()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	h.logger.Info("User logged out", zap.String("user_id", claims.UserID.String()), zap.String("session_id", req.SessionID))
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

@@ -1,6 +1,7 @@
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { sendMessage, getNextQuestion, getResults, type ResultsResponse } from '../services/chat'
+import { sendMessage, getNextQuestion, getResults, resumeChat, getInterviewChat, terminateChat, type ResultsResponse } from '../services/chat'
+import TerminateConfirmModal from '../components/TerminateConfirmModal'
 
 interface Message {
   id: string
@@ -19,6 +20,7 @@ export default function Chat() {
   const [userId, setUserId] = useState<string | null>(null)
   const [chatCompleted, setChatCompleted] = useState(false)
   const [results, setResults] = useState<ResultsResponse | null>(null)
+  const [showTerminateModal, setShowTerminateModal] = useState(false)
   const pollingIntervalRef = useRef<number | null>(null)
 
   const startPolling = useCallback(() => {
@@ -90,6 +92,63 @@ export default function Chat() {
     if (!sessionId) {
       startNewChat()
     } else {
+      // Восстанавливаем активную сессию - загружаем историю чата и отправляем событие восстановления
+      const resumeActiveSession = async () => {
+        try {
+          // Загружаем историю чата (BFF сам определит активный или завершенный)
+          try {
+            const chatHistory = await getInterviewChat(sessionId)
+            if (chatHistory && chatHistory.length > 0) {
+              // Преобразуем ChatMessage в Message для отображения
+              const historyMessages: Message[] = chatHistory.map((msg, idx) => {
+                if (msg.type === 'system') {
+                  // Извлекаем текст вопроса (убираем префикс "Вопрос: " если есть)
+                  let questionText = msg.content
+                  if (questionText.startsWith('Вопрос: ')) {
+                    questionText = questionText.substring('Вопрос: '.length)
+                  }
+                  return {
+                    id: `history-system-${idx}`,
+                    type: 'question',
+                    content: questionText,
+                    timestamp: msg.created_at,
+                  }
+                } else if (msg.type === 'user') {
+                  return {
+                    id: `history-user-${idx}`,
+                    type: 'user',
+                    content: msg.content,
+                    timestamp: msg.created_at,
+                  }
+                }
+                return null
+              }).filter((msg): msg is Message => msg !== null)
+              
+              setMessages(historyMessages)
+              console.log('Chat history loaded:', historyMessages.length, 'messages')
+            }
+          } catch (error) {
+            console.warn('Failed to load chat history, continuing without it:', error)
+            // Продолжаем даже если история не загрузилась (может быть новая сессия)
+            // Но все равно отправляем событие восстановления - сессия может быть активна
+          }
+          
+          // Отправляем событие восстановления в Kafka (даже если истории нет - сессия может быть активна)
+          try {
+            await resumeChat(sessionId)
+            console.log('Chat session resumed')
+          } catch (error) {
+            console.warn('Failed to send resume event, continuing:', error)
+            // Продолжаем - сессия может быть уже активна или завершена
+          }
+        } catch (error) {
+          console.error('Failed to resume chat session:', error)
+          // Продолжаем даже если не удалось отправить событие восстановления
+          // (сессия может быть уже завершена)
+        }
+      }
+      resumeActiveSession()
+      
       // Запускаем polling для получения вопросов
       startPolling()
     }
@@ -122,7 +181,7 @@ export default function Chat() {
     setIsLoading(true)
 
     try {
-      await sendMessage(sessionId, userId, inputValue)
+      await sendMessage(sessionId, inputValue)
       // Polling автоматически получит следующий вопрос или результаты
     } catch (error) {
       console.error('Failed to send message:', error)
@@ -138,8 +197,51 @@ export default function Chat() {
     }
   }
 
+  const handleTerminate = async () => {
+    if (!sessionId || !userId || chatCompleted) return
+    setShowTerminateModal(true)
+  }
+
+  const handleTerminateConfirm = async () => {
+    if (!sessionId || !userId || chatCompleted) return
+
+    try {
+      await terminateChat(sessionId)
+
+      // Закрываем модальное окно только после успешного завершения
+      setShowTerminateModal(false)
+
+      // Останавливаем polling и устанавливаем флаг завершения
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+      }
+      setChatCompleted(true)
+      
+      // Получаем результаты через небольшую задержку
+      setTimeout(async () => {
+        try {
+          const chatResults = await getResults(sessionId)
+          if (chatResults) {
+            setResults(chatResults)
+          }
+        } catch (error) {
+          console.error('Failed to get results after termination:', error)
+        }
+      }, 1000)
+    } catch (error) {
+      console.error('Failed to terminate chat:', error)
+      // Не закрываем модальное окно при ошибке - пользователь может попробовать снова
+      // Ошибка уже логируется в консоли, пользователь увидит проблему через UI
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
+      <TerminateConfirmModal 
+        isOpen={showTerminateModal}
+        onClose={() => setShowTerminateModal(false)}
+        onConfirm={handleTerminateConfirm}
+      />
       <header className="border-b border-orange-100 bg-white/70 backdrop-blur">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/dashboard" className="text-sm text-orange-600 hover:underline">
@@ -194,7 +296,7 @@ export default function Chat() {
               <div key={msg.id} className="grid gap-2">
                 {msg.type === 'question' && (
                   <div className="self-start max-w-[80%] rounded-2xl px-4 py-2 bg-orange-100 text-zinc-900">
-                    Вопрос: {msg.content}
+                    {msg.content}
                   </div>
                 )}
                 {msg.type === 'user' && (
@@ -223,7 +325,7 @@ export default function Chat() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isLoading || !sessionId}
+            disabled={isLoading || !sessionId || chatCompleted}
           />
           <button
             onClick={handleSend}
@@ -231,6 +333,14 @@ export default function Chat() {
             className="px-4 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 disabled:bg-orange-300 disabled:cursor-not-allowed"
           >
             Отправить
+          </button>
+          <button
+            onClick={handleTerminate}
+            disabled={!sessionId || chatCompleted}
+            className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed"
+            title="Досрочно завершить интервью"
+          >
+            Завершить
           </button>
         </div>
       </main>

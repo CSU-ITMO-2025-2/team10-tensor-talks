@@ -20,6 +20,7 @@ type SessionRepository interface {
 	Create(ctx context.Context, session *models.Session) error
 	GetBySessionID(ctx context.Context, sessionID uuid.UUID) (*models.Session, error)
 	GetByUserID(ctx context.Context, userID uuid.UUID) ([]models.Session, error)
+	GetActiveSessionByUserID(ctx context.Context, userID uuid.UUID) (*models.Session, error)
 	Update(ctx context.Context, session *models.Session) error
 	UpdateProgram(ctx context.Context, sessionID uuid.UUID, program *models.InterviewProgram) error
 	UpdateEndTime(ctx context.Context, sessionID uuid.UUID, endTime *time.Time) error
@@ -63,6 +64,18 @@ func (r *GormSessionRepository) GetByUserID(ctx context.Context, userID uuid.UUI
 		return nil, err
 	}
 	return sessions, nil
+}
+
+// GetActiveSessionByUserID возвращает активную сессию пользователя (где end_time IS NULL).
+func (r *GormSessionRepository) GetActiveSessionByUserID(ctx context.Context, userID uuid.UUID) (*models.Session, error) {
+	var session models.Session
+	if err := r.db.WithContext(ctx).Where("user_id = ? AND end_time IS NULL", userID).Order("start_time DESC").First(&session).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &session, nil
 }
 
 // Update обновляет сессию.

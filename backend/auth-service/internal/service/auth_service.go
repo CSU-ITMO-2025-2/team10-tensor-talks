@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/tensor-talks/auth-service/internal/client"
@@ -50,15 +51,29 @@ type TokenManager interface {
 	Validate(token string) (*tokens.Claims, error)
 }
 
+// SessionStore описывает интерфейс для управления логин-сессиями в Redis.
+type SessionStore interface {
+	Ping(ctx context.Context) error
+	CreateSession(ctx context.Context, userID uuid.UUID, sessionID, accessToken string) error
+	ValidateSession(ctx context.Context, userID uuid.UUID, sessionID, accessToken string) (bool, error)
+	DeleteSession(ctx context.Context, userID uuid.UUID, sessionID string) error
+	DeleteAllUserSessions(ctx context.Context, userID uuid.UUID) error
+}
+
 // AuthService оркестрирует операции регистрации, логина и работы с токенами.
 type AuthService struct {
-	userStore UserStoreAPI
-	tokens    TokenManager
+	userStore    UserStoreAPI
+	tokens       TokenManager
+	sessionStore SessionStore
 }
 
 // NewAuthService создаёт новый экземпляр сервиса аутентификации.
-func NewAuthService(userStore UserStoreAPI, tokens TokenManager) *AuthService {
-	return &AuthService{userStore: userStore, tokens: tokens}
+func NewAuthService(userStore UserStoreAPI, tokens TokenManager, sessionStore SessionStore) *AuthService {
+	return &AuthService{
+		userStore:    userStore,
+		tokens:       tokens,
+		sessionStore: sessionStore,
+	}
 }
 
 // Register выполняет регистрацию нового пользователя и возвращает пару токенов.
@@ -93,6 +108,23 @@ func (s *AuthService) Register(ctx context.Context, login, password string) (*cl
 		return nil, tokens.TokenPair{}, fmt.Errorf("generate tokens: %w", err)
 	}
 
+	// Получаем claims из access токена для извлечения session ID (jti)
+	accessClaims, err := s.tokens.Validate(pair.AccessToken)
+	if err != nil {
+		return nil, tokens.TokenPair{}, fmt.Errorf("validate generated token: %w", err)
+	}
+
+	// Создаём сессию в Redis
+	if s.sessionStore != nil {
+		sessionID := accessClaims.ID
+		if sessionID == "" {
+			sessionID = fmt.Sprintf("%s-%d", user.ID.String(), time.Now().Unix())
+		}
+		if err := s.sessionStore.CreateSession(ctx, user.ID, sessionID, pair.AccessToken); err != nil {
+			// Логируем ошибку, но не прерываем регистрацию
+		}
+	}
+
 	return user, pair, nil
 }
 
@@ -120,6 +152,23 @@ func (s *AuthService) Login(ctx context.Context, login, password string) (*clien
 	pair, err := s.tokens.GenerateTokens(user)
 	if err != nil {
 		return nil, tokens.TokenPair{}, fmt.Errorf("generate tokens: %w", err)
+	}
+
+	// Получаем claims из access токена для извлечения session ID (jti)
+	accessClaims, err := s.tokens.Validate(pair.AccessToken)
+	if err != nil {
+		return nil, tokens.TokenPair{}, fmt.Errorf("validate generated token: %w", err)
+	}
+
+	// Создаём сессию в Redis
+	if s.sessionStore != nil {
+		sessionID := accessClaims.ID
+		if sessionID == "" {
+			sessionID = fmt.Sprintf("%s-%d", user.ID.String(), time.Now().Unix())
+		}
+		if err := s.sessionStore.CreateSession(ctx, user.ID, sessionID, pair.AccessToken); err != nil {
+			// Логируем ошибку, но не прерываем логин
+		}
 	}
 
 	return user, pair, nil
@@ -150,7 +199,8 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*client
 }
 
 // ValidateToken валидирует access-токен и возвращает его claims при успехе.
-func (s *AuthService) ValidateToken(token string) (*tokens.Claims, error) {
+// Также проверяет, что сессия существует в Redis (если sessionStore настроен).
+func (s *AuthService) ValidateToken(ctx context.Context, token string) (*tokens.Claims, error) {
 	claims, err := s.tokens.Validate(token)
 	if err != nil {
 		return nil, ErrInvalidToken
@@ -158,6 +208,26 @@ func (s *AuthService) ValidateToken(token string) (*tokens.Claims, error) {
 	if claims.Subject != "access" {
 		return nil, ErrInvalidToken
 	}
+
+	// Проверяем наличие сессии в Redis (если sessionStore настроен)
+	if s.sessionStore != nil {
+		sessionID := claims.ID
+		if sessionID == "" {
+			// Если jti не установлен, токен считается невалидным
+			return nil, ErrInvalidToken
+		}
+
+		valid, err := s.sessionStore.ValidateSession(ctx, claims.UserID, sessionID, token)
+		if err != nil {
+			// При ошибке проверки Redis считаем токен невалидным для безопасности
+			return nil, ErrInvalidToken
+		}
+		if !valid {
+			// Сессия не найдена или истекла
+			return nil, ErrInvalidToken
+		}
+	}
+
 	return claims, nil
 }
 
@@ -166,13 +236,21 @@ func (s *AuthService) GetUserByID(ctx context.Context, id uuid.UUID) (*client.Us
 	return s.userStore.GetUserByID(ctx, id)
 }
 
+// Logout удаляет сессию пользователя из Redis.
+func (s *AuthService) Logout(ctx context.Context, userID uuid.UUID, sessionID string) error {
+	if s.sessionStore == nil {
+		return nil // Если sessionStore не настроен, logout просто ничего не делает
+	}
+	return s.sessionStore.DeleteSession(ctx, userID, sessionID)
+}
+
 // normalizeLogin приводит логин к нижнему регистру и убирает пробелы по краям.
 func normalizeLogin(login string) string {
 	return strings.TrimSpace(strings.ToLower(login))
 }
 
 // validateCredentials проверяет базовые требования к логину и паролю.
-// Здесь не проводится политика сложности пароля — только минимальная длина и отсутствие пробелов в логине.
+// Для пароля: минимальная длина 8 символов, требуется хотя бы одна цифра и одна буква.
 func validateCredentials(login, password string) error {
 	if len(login) < 3 || len(login) > 30 {
 		return ErrInvalidInput
@@ -180,9 +258,33 @@ func validateCredentials(login, password string) error {
 	if strings.Contains(login, " ") {
 		return ErrInvalidInput
 	}
-	if len(password) < 6 {
+
+	// Ужесточённые требования к паролю
+	if len(password) < 8 {
 		return ErrInvalidInput
 	}
+
+	// Проверка наличия хотя бы одной буквы и одной цифры
+	hasLetter := false
+	hasDigit := false
+	for _, r := range password {
+		// Проверяем ASCII буквы (a-z, A-Z)
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			hasLetter = true
+		}
+		// Проверяем цифры (0-9)
+		if r >= '0' && r <= '9' {
+			hasDigit = true
+		}
+		// Если уже найдены и буква, и цифра, выходим из цикла
+		if hasLetter && hasDigit {
+			break
+		}
+	}
+	if !hasLetter || !hasDigit {
+		return ErrInvalidInput
+	}
+
 	return nil
 }
 

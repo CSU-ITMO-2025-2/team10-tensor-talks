@@ -108,6 +108,47 @@ func (c *ChatCRUDClient) GetMessages(ctx context.Context, sessionID uuid.UUID) (
 	return chatMessages, nil
 }
 
+// GetActiveChatJSON получает JSON структуру незавершенного чата.
+func (c *ChatCRUDClient) GetActiveChatJSON(ctx context.Context, sessionID uuid.UUID) ([]ChatMessage, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/chat-active/"+sessionID.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("active chat not found")
+		}
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(body, &errResp); err == nil {
+			return nil, fmt.Errorf("chat crud service error: %s", errResp.Error)
+		}
+		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var messagesResp struct {
+		Messages []ChatMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &messagesResp); err != nil {
+		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	return messagesResp.Messages, nil
+}
+
 // GetChatDump получает дамп завершенного чата.
 func (c *ChatCRUDClient) GetChatDump(ctx context.Context, sessionID uuid.UUID) (*ChatDump, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/chat-dumps/"+sessionID.String(), nil)

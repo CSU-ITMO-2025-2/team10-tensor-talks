@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tensor-talks/bff-service/internal/client"
+	"github.com/tensor-talks/bff-service/internal/middleware"
 	"github.com/tensor-talks/bff-service/internal/service"
 	"go.uber.org/zap"
 )
@@ -47,12 +48,16 @@ func (h *Handler) RegisterRoutes(router gin.IRouter) {
 		auth.GET("/me", h.me)
 
 		chat := api.Group("/chat")
+		chat.Use(middleware.AuthMiddleware(h.auth, h.logger))
 		chat.POST("/start", h.startChat)
 		chat.POST("/message", h.sendMessage)
+		chat.POST("/:session_id/resume", h.resumeChat)
+		chat.POST("/:session_id/terminate", h.terminateChat)
 		chat.GET("/:session_id/question", h.getNextQuestion)
 		chat.GET("/:session_id/results", h.getResults)
 
 		interviews := api.Group("/interviews")
+		interviews.Use(middleware.AuthMiddleware(h.auth, h.logger))
 		interviews.Use(func(c *gin.Context) {
 			h.logger.Info("Interviews group request",
 				zap.String("method", c.Request.Method),
@@ -235,7 +240,6 @@ func extractBearer(header string) string {
 }
 
 type startChatRequest struct {
-	UserID uuid.UUID            `json:"user_id" binding:"required"`
 	Params client.SessionParams `json:"params" binding:"required"`
 }
 
@@ -246,6 +250,28 @@ type startChatResponse struct {
 
 // startChat обрабатывает POST /api/chat/start.
 func (h *Handler) startChat(c *gin.Context) {
+	// Получаем user_id из контекста (установлен middleware)
+	userIDValue, exists := c.Get(middleware.UserIDKey)
+	if !exists {
+		h.logger.Warn("StartChat: user ID not found in context")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	userIDStr, ok := userIDValue.(string)
+	if !ok {
+		h.logger.Warn("StartChat: invalid user ID type in context")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		h.logger.Warn("StartChat: invalid user ID format", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
 	var req startChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Warn("StartChat: invalid payload", zap.Error(err))
@@ -253,18 +279,19 @@ func (h *Handler) startChat(c *gin.Context) {
 		return
 	}
 
-	h.logger.Info("Start chat request", zap.String("user_id", req.UserID.String()))
+	h.logger.Info("Start chat request", zap.String("user_id", userID.String()))
 	// Create a context with timeout for session creation (allows time for interview program building)
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	// Session service waits 30s for interview program, so we need at least 35s+ context timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
-	sessionID, err := h.chat.StartChat(ctx, req.UserID, req.Params)
+	sessionID, err := h.chat.StartChat(ctx, userID, req.Params)
 	if err != nil {
 		if err.Error() == "max active sessions reached" {
-			h.logger.Warn("Start chat failed: max active sessions reached", zap.String("user_id", req.UserID.String()))
+			h.logger.Warn("Start chat failed: max active sessions reached", zap.String("user_id", userID.String()))
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "max active sessions reached"})
 			return
 		}
-		h.logger.Error("Start chat failed", zap.Error(err), zap.String("user_id", req.UserID.String()))
+		h.logger.Error("Start chat failed", zap.Error(err), zap.String("user_id", userID.String()))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start chat"})
 		return
 	}
@@ -278,12 +305,33 @@ func (h *Handler) startChat(c *gin.Context) {
 
 type sendMessageRequest struct {
 	SessionID uuid.UUID `json:"session_id" binding:"required"`
-	UserID    uuid.UUID `json:"user_id" binding:"required"`
 	Content   string    `json:"content" binding:"required"`
 }
 
 // sendMessage обрабатывает POST /api/chat/message.
 func (h *Handler) sendMessage(c *gin.Context) {
+	// Получаем user_id из контекста (установлен middleware)
+	userIDValue, exists := c.Get(middleware.UserIDKey)
+	if !exists {
+		h.logger.Warn("SendMessage: user ID not found in context")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	userIDStr, ok := userIDValue.(string)
+	if !ok {
+		h.logger.Warn("SendMessage: invalid user ID type in context")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		h.logger.Warn("SendMessage: invalid user ID format", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
 	var req sendMessageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Warn("SendMessage: invalid payload", zap.Error(err))
@@ -293,10 +341,10 @@ func (h *Handler) sendMessage(c *gin.Context) {
 
 	h.logger.Info("Send message request",
 		zap.String("session_id", req.SessionID.String()),
-		zap.String("user_id", req.UserID.String()),
+		zap.String("user_id", userID.String()),
 	)
 
-	if err := h.chat.SendMessage(c.Request.Context(), req.SessionID, req.UserID, req.Content); err != nil {
+	if err := h.chat.SendMessage(c.Request.Context(), req.SessionID, userID, req.Content); err != nil {
 		h.logger.Error("Send message failed",
 			zap.Error(err),
 			zap.String("session_id", req.SessionID.String()),
@@ -306,6 +354,121 @@ func (h *Handler) sendMessage(c *gin.Context) {
 	}
 
 	h.logger.Info("Message sent successfully", zap.String("session_id", req.SessionID.String()))
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// resumeChat обрабатывает POST /api/chat/:session_id/resume (восстановление активной сессии чата).
+func (h *Handler) resumeChat(c *gin.Context) {
+	// Получаем user_id из контекста (установлен middleware)
+	userIDValue, exists := c.Get(middleware.UserIDKey)
+	if !exists {
+		h.logger.Warn("ResumeChat: user ID not found in context")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	userIDStr, ok := userIDValue.(string)
+	if !ok {
+		h.logger.Warn("ResumeChat: invalid user ID type in context")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		h.logger.Warn("ResumeChat: invalid user ID format", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	sessionIDStr := c.Param("session_id")
+	if sessionIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "session_id required"})
+		return
+	}
+
+	sessionID, err := uuid.Parse(sessionIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session_id"})
+		return
+	}
+
+	h.logger.Info("Resume chat request",
+		zap.String("session_id", sessionID.String()),
+		zap.String("user_id", userID.String()),
+	)
+
+	if err := h.chat.ResumeChat(c.Request.Context(), sessionID, userID); err != nil {
+		if err.Error() == "session already completed" {
+			h.logger.Warn("Resume chat failed: session already completed",
+				zap.String("session_id", sessionID.String()),
+			)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "session already completed"})
+			return
+		}
+		h.logger.Error("Resume chat failed",
+			zap.Error(err),
+			zap.String("session_id", sessionID.String()),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resume chat"})
+		return
+	}
+
+	h.logger.Info("Chat resumed successfully", zap.String("session_id", sessionID.String()))
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// terminateChat обрабатывает POST /api/chat/:session_id/terminate (досрочное завершение чата).
+func (h *Handler) terminateChat(c *gin.Context) {
+	// Получаем user_id из контекста (установлен middleware)
+	userIDValue, exists := c.Get(middleware.UserIDKey)
+	if !exists {
+		h.logger.Warn("TerminateChat: user ID not found in context")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	userIDStr, ok := userIDValue.(string)
+	if !ok {
+		h.logger.Warn("TerminateChat: invalid user ID type in context")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		h.logger.Warn("TerminateChat: invalid user ID format", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	sessionIDStr := c.Param("session_id")
+	if sessionIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "session_id required"})
+		return
+	}
+
+	sessionID, err := uuid.Parse(sessionIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session_id"})
+		return
+	}
+
+	h.logger.Info("Terminate chat request",
+		zap.String("session_id", sessionID.String()),
+		zap.String("user_id", userID.String()),
+	)
+
+	if err := h.chat.TerminateChat(c.Request.Context(), sessionID, userID); err != nil {
+		h.logger.Error("Terminate chat failed",
+			zap.Error(err),
+			zap.String("session_id", sessionID.String()),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to terminate chat"})
+		return
+	}
+
+	h.logger.Info("Chat terminated successfully", zap.String("session_id", sessionID.String()))
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -420,7 +583,9 @@ func (h *Handler) getInterviewChat(c *gin.Context) {
 
 	messages, err := h.chat.GetChatHistory(c.Request.Context(), sessionID)
 	if err != nil {
-		if err.Error() == "chat dump not found" || err.Error() == "chat crud service error: chat dump not found" {
+		errStr := err.Error()
+		if errStr == "chat dump not found" || errStr == "chat crud service error: chat dump not found" ||
+			errStr == "get chat dump: chat dump not found" {
 			h.logger.Warn("Chat dump not found", zap.String("session_id", sessionID.String()))
 			c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
 			return

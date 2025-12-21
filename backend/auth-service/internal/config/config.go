@@ -26,6 +26,7 @@ type Config struct {
 	Server    ServerConfig    `mapstructure:"server"`
 	UserStore UserStoreConfig `mapstructure:"user_store"`
 	JWT       JWTConfig       `mapstructure:"jwt"`
+	Redis     RedisConfig     `mapstructure:"redis"`
 }
 
 // ServerConfig описывает настройки HTTP-сервера.
@@ -50,6 +51,13 @@ type JWTConfig struct {
 
 	AccessTokenTTLRaw  string `mapstructure:"access_token_ttl"`
 	RefreshTokenTTLRaw string `mapstructure:"refresh_token_ttl"`
+}
+
+// RedisConfig содержит параметры подключения к Redis для управления логин-сессиями.
+type RedisConfig struct {
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
 }
 
 // Load загружает конфигурацию из файла и переменных окружения.

@@ -69,7 +69,12 @@ export default function Dashboard() {
       }
     } catch (error: any) {
       console.error('Failed to start interview:', error)
-      const errorMessage = error?.message || 'Не удалось начать интервью. Попробуйте еще раз.'
+      let errorMessage = 'Не удалось начать интервью. Попробуйте еще раз.'
+      if (error?.message?.includes('already has an active session')) {
+        errorMessage = 'У вас уже есть активная сессия. Завершите текущее интервью перед началом нового.'
+      } else if (error?.message) {
+        errorMessage = error.message
+      }
       alert(errorMessage)
     }
   }
@@ -268,31 +273,48 @@ export default function Dashboard() {
             <div>
               <h2 className="text-xl font-semibold mb-3">Пройденные интервью</h2>
               <div className="overflow-hidden rounded-xl border border-orange-100">
+                <div className="max-h-96 overflow-y-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-orange-50">
+                    <thead className="bg-orange-50 sticky top-0">
                     <tr>
                       <th className="text-left p-3">Интервью</th>
-                      <th className="text-left p-3">Дата</th>
+                        <th className="text-left p-3">Дата и время</th>
+                        <th className="text-left p-3">Статус</th>
                       <th className="text-left p-3">Оценка</th>
+                      <th className="text-left p-3">Обратная связь</th>
                     </tr>
                   </thead>
                   <tbody>
                     {isLoadingInterviews ? (
                       <tr>
-                        <td colSpan={3} className="p-3 text-center text-zinc-500">Загрузка...</td>
+                          <td colSpan={5} className="p-3 text-center text-zinc-500">Загрузка...</td>
                       </tr>
                     ) : interviews.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="p-3 text-center text-zinc-500">Нет пройденных интервью</td>
+                          <td colSpan={5} className="p-3 text-center text-zinc-500">Нет пройденных интервью</td>
                       </tr>
                     ) : (
                       interviews.map((i) => {
-                        const date = new Date(i.start_time).toLocaleDateString('ru-RU', {
+                          const dateTime = new Date(i.start_time).toLocaleString('ru-RU', {
                           day: '2-digit',
                           month: '2-digit',
-                          year: 'numeric'
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
                         })
                         const title = i.params.topics?.join(', ') || 'Интервью'
+                          const isActive = !i.end_time
+                          let status = isActive ? 'Активная' : 'Завершена'
+                          let statusColor = isActive ? 'text-blue-600' : 'text-green-600'
+                          if (i.terminated_early) {
+                            status = 'Досрочно завершена'
+                            statusColor = 'text-yellow-600'
+                          }
+                          // Обрезаем feedback если длинный
+                          const maxFeedbackLength = 50
+                          const feedbackDisplay = i.feedback && i.feedback.length > maxFeedbackLength 
+                            ? i.feedback.substring(0, maxFeedbackLength) + '...'
+                            : (i.feedback || '—')
                         
                         return (
                           <tr key={i.session_id} className="border-t border-orange-100 hover:bg-orange-50/50">
@@ -309,7 +331,8 @@ export default function Dashboard() {
                             >
                               {title}
                             </td>
-                            <td className="p-3">{date}</td>
+                              <td className="p-3">{dateTime}</td>
+                              <td className={`p-3 font-medium ${statusColor}`}>{status}</td>
                             <td 
                               className="p-3 text-orange-700 underline cursor-pointer" 
                               onClick={() => {
@@ -319,7 +342,10 @@ export default function Dashboard() {
                                 }
                               }}
                             >
-                              {i.has_results && i.score !== undefined ? `${i.score}%` : 'В процессе'}
+                                {i.has_results && i.score !== null && i.score !== undefined ? `${i.score}%` : (isActive ? '—' : 'Нет оценки')}
+                            </td>
+                            <td className="p-3 text-zinc-600 text-sm">
+                              {feedbackDisplay}
                             </td>
                           </tr>
                         )
@@ -327,6 +353,7 @@ export default function Dashboard() {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
 

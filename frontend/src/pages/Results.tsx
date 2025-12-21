@@ -73,6 +73,11 @@ export default function Results() {
           <>
             <section className="bg-white rounded-xl border border-orange-100 p-6">
               <h2 className="text-xl font-semibold mb-2">Итоговая оценка</h2>
+              {result.terminated_early && (
+                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="text-sm font-medium text-yellow-800">⚠️ Интервью было досрочно завершено пользователем</div>
+                </div>
+              )}
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
                   <div className="text-3xl font-bold text-orange-700">{result.score}%</div>

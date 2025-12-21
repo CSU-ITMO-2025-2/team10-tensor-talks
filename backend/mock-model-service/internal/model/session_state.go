@@ -54,10 +54,27 @@ func (sm *SessionManager) SetProgram(sessionID string, program *models.Interview
 	if state, ok := sm.sessions.Load(sessionID); ok {
 		s := state.(*SessionState)
 		s.mu.Lock()
+		// Если программа уже установлена и есть текущий индекс, не сбрасываем его
+		if s.Program == nil {
+			s.CurrentIndex = 0
+		}
 		s.Program = program
-		s.CurrentIndex = 0
 		s.mu.Unlock()
 	}
+}
+
+// RestoreStateFromChatHistory восстанавливает состояние сессии на основе истории чата.
+// Определяет, сколько вопросов уже задано, и устанавливает соответствующий CurrentIndex.
+func (sm *SessionManager) RestoreStateFromChatHistory(sessionID string, program *models.InterviewProgram, systemMessagesCount int) {
+	state := sm.GetOrCreate(sessionID, "")
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	state.Program = program
+	// systemMessagesCount - количество сообщений типа "system", каждое соответствует вопросу
+	// Устанавливаем CurrentIndex на следующий вопрос (уже задано systemMessagesCount вопросов)
+	state.CurrentIndex = systemMessagesCount
+	state.QuestionsAsked = systemMessagesCount
 }
 
 // GetNextQuestion возвращает следующий вопрос из программы и увеличивает индекс.

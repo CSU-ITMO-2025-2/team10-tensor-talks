@@ -50,14 +50,27 @@ export async function startChat(userId: string, params: SessionParams): Promise<
   }
 }
 
-export async function sendMessage(sessionId: string, userId: string, content: string): Promise<void> {
+export async function sendMessage(sessionId: string, content: string): Promise<void> {
   return request<void>('/chat/message', {
     method: 'POST',
     body: JSON.stringify({
       session_id: sessionId,
-      user_id: userId,
       content: content,
     }),
+  });
+}
+
+export async function resumeChat(sessionId: string): Promise<void> {
+  return request<void>(`/chat/${sessionId}/resume`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function terminateChat(sessionId: string): Promise<void> {
+  return request<void>(`/chat/${sessionId}/terminate`, {
+    method: 'POST',
+    body: JSON.stringify({}),
   });
 }
 
@@ -106,8 +119,9 @@ export interface InterviewInfo {
   end_time?: string;
   params: SessionParams;
   has_results: boolean;
-  score?: number;
+  score?: number | null;
   feedback?: string;
+  terminated_early?: boolean;
 }
 
 export interface InterviewsResponse {
@@ -153,6 +167,7 @@ export interface InterviewResult {
   session_id: string;
   score: number;
   feedback: string;
+  terminated_early: boolean;
   created_at: string;
   updated_at: string;
 }

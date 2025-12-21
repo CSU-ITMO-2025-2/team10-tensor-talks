@@ -48,8 +48,9 @@ func (h *SessionHandler) CreateSession(c *gin.Context) {
 		metrics.BusinessSessionsCreatedTotal.WithLabelValues("session-service", "error").Inc()
 		h.logger.Error("CreateSession failed", zap.Error(err))
 
-		if err.Error() == "max active sessions reached" {
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
+		errMsg := err.Error()
+		if errMsg == "user already has an active session" || errMsg == "max active sessions reached" {
+			c.JSON(http.StatusConflict, gin.H{"error": errMsg})
 			return
 		}
 

@@ -101,10 +101,13 @@ func (m *Manager) Validate(token string) (*Claims, error) {
 // buildClaims формирует базовый набор claims (issuer, audience, ttl) и данные пользователя.
 func (m *Manager) buildClaims(user *client.User, ttl time.Duration) *Claims {
 	now := time.Now().UTC()
+	// Генерируем уникальный ID для токена (jti) для идентификации сессии
+	jti := uuid.New().String()
 	return &Claims{
 		UserID: user.ID,
 		Login:  user.Login,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti, // JWT ID для идентификации сессии
 			Subject:   "access",
 			Issuer:    m.cfg.Issuer,
 			Audience:  jwt.ClaimStrings{m.cfg.Audience},

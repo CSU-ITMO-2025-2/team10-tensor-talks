@@ -13,6 +13,7 @@ import (
 	"github.com/tensor-talks/auth-service/internal/client"
 	"github.com/tensor-talks/auth-service/internal/config"
 	"github.com/tensor-talks/auth-service/internal/handler"
+	"github.com/tensor-talks/auth-service/internal/redis"
 	"github.com/tensor-talks/auth-service/internal/service"
 	"github.com/tensor-talks/auth-service/internal/tokens"
 	"go.uber.org/zap"
@@ -46,7 +47,29 @@ func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
 	}
 
 	tokenManager := tokens.NewManager(cfg.JWT)
-	authService := service.NewAuthService(userStoreClient, tokenManager)
+
+	// Инициализируем Redis для управления логин-сессиями
+	var sessionStore service.SessionStore
+	if cfg.Redis.Addr != "" {
+		sessionStore = redis.NewSessionStore(
+			cfg.Redis.Addr,
+			cfg.Redis.Password,
+			cfg.Redis.DB,
+			cfg.JWT.AccessTokenTTL, // TTL сессии равен TTL access токена
+			logger,
+		)
+		// Проверяем подключение к Redis
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := sessionStore.Ping(ctx); err != nil {
+			logger.Warn("Failed to connect to Redis, session management disabled", zap.Error(err))
+			sessionStore = nil
+		} else {
+			logger.Info("Redis connection established for session management")
+		}
+	}
+
+	authService := service.NewAuthService(userStoreClient, tokenManager, sessionStore)
 	authHandler := handler.NewAuthHandler(authService, logger)
 
 	engine := gin.Default()

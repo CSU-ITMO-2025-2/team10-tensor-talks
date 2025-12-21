@@ -27,6 +27,7 @@ func NewChatHandler(svc *service.ChatService, logger *zap.Logger) *ChatHandler {
 func (h *ChatHandler) RegisterRoutes(router gin.IRouter) {
 	router.POST("/messages", h.SaveMessage)
 	router.GET("/messages/:session_id", h.GetMessages)
+	router.GET("/chat-active/:session_id", h.GetActiveChatJSON)
 	router.GET("/chat-dumps/:session_id", h.GetChatDump)
 	router.POST("/chat-dumps/:session_id", h.CreateChatDump)
 }
@@ -77,6 +78,27 @@ func (h *ChatHandler) GetMessages(c *gin.Context) {
 
 	metrics.BusinessChatOperationsTotal.WithLabelValues("chat-crud-service", "get_messages", "success").Inc()
 	c.JSON(http.StatusOK, gin.H{"messages": messages})
+}
+
+// GetActiveChatJSON возвращает JSON структуру незавершенного чата.
+func (h *ChatHandler) GetActiveChatJSON(c *gin.Context) {
+	sessionID, err := uuid.Parse(c.Param("session_id"))
+	if err != nil {
+		h.logger.Warn("GetActiveChatJSON: invalid session id", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session id"})
+		return
+	}
+
+	chatJSON, err := h.svc.GetActiveChatJSON(c.Request.Context(), sessionID)
+	if err != nil {
+		metrics.BusinessChatOperationsTotal.WithLabelValues("chat-crud-service", "get_active_chat_json", "error").Inc()
+		h.logger.Error("GetActiveChatJSON failed", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	metrics.BusinessChatOperationsTotal.WithLabelValues("chat-crud-service", "get_active_chat_json", "success").Inc()
+	c.JSON(http.StatusOK, gin.H{"messages": chatJSON.Messages})
 }
 
 // GetChatDump возвращает дамп чата.

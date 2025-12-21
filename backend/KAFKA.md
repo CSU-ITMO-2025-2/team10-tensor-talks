@@ -116,7 +116,34 @@ Kafka используется для асинхронной обработки 
 - `user_id` (string, UUID) — идентификатор пользователя
 - `started_at` (string, ISO 8601) — время начала чата
 
-#### 2. Событие `chat.user_message`
+#### 2. Событие `chat.resumed`
+
+Отправляется когда пользователь открывает активную сессию чата для продолжения интервью.
+
+```json
+{
+  "event_id": "evt-resume-001",
+  "event_type": "chat.resumed",
+  "timestamp": "2025-01-15T10:35:00.123Z",
+  "service": "bff-service",
+  "version": "1.0.0",
+  "payload": {
+    "session_id": "session-xyz789",
+    "user_id": "user-123456",
+    "resumed_at": "2025-01-15T10:35:00.123Z"
+  },
+  "metadata": {
+    "request_id": "req-resume-123"
+  }
+}
+```
+
+**Поля payload:**
+- `session_id` (string, UUID) — идентификатор сессии чата
+- `user_id` (string, UUID) — идентификатор пользователя
+- `resumed_at` (string, ISO 8601) — время восстановления сессии
+
+#### 3. Событие `chat.user_message`
 
 Отправляется когда пользователь отправляет сообщение в чат.
 
@@ -180,7 +207,34 @@ Kafka используется для асинхронной обработки 
 - `question_id` (string, UUID) — уникальный идентификатор вопроса
 - `timestamp` (string, ISO 8601) — время создания вопроса
 
-#### 2. Событие `chat.completed`
+#### 4. Событие `chat.terminated`
+
+Отправляется когда пользователь досрочно завершает интервью.
+
+```json
+{
+  "event_id": "evt-term-001",
+  "event_type": "chat.terminated",
+  "timestamp": "2025-01-15T10:40:00.123Z",
+  "service": "bff-service",
+  "version": "1.0.0",
+  "payload": {
+    "session_id": "session-xyz789",
+    "user_id": "user-123456",
+    "terminated_at": "2025-01-15T10:40:00.123Z"
+  },
+  "metadata": {
+    "request_id": "req-term-123"
+  }
+}
+```
+
+**Поля payload:**
+- `session_id` (string, UUID) — идентификатор сессии чата
+- `user_id` (string, UUID) — идентификатор пользователя
+- `terminated_at` (string, ISO 8601) — время досрочного завершения
+
+#### 5. Событие `chat.completed`
 
 Отправляется когда чат завершен (интервью окончено).
 

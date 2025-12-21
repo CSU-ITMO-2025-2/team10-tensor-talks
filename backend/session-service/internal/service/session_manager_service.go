@@ -50,6 +50,19 @@ func NewSessionManagerService(
 
 // CreateSession создаёт новую сессию с проверкой лимита и ожиданием программы.
 func (s *SessionManagerService) CreateSession(ctx context.Context, userID uuid.UUID, params models.SessionParams) (*SessionResponse, error) {
+	// Проверяем, есть ли уже активная сессия у пользователя
+	activeSession, err := s.crudClient.GetActiveSessionByUserID(ctx, userID)
+	if err != nil && err.Error() != "active session not found" && err.Error() != "session crud service error: active session not found" {
+		s.logger.Warn("Failed to check for active session, allowing session creation", zap.Error(err))
+		// Продолжаем, если не можем проверить (кроме случая когда сессии нет)
+	} else if err == nil && activeSession != nil {
+		s.logger.Warn("User already has an active session",
+			zap.String("user_id", userID.String()),
+			zap.String("active_session_id", activeSession.Session.SessionID.String()),
+		)
+		return nil, fmt.Errorf("user already has an active session: %s", activeSession.Session.SessionID.String())
+	}
+
 	// Проверяем лимит активных сессий
 	activeCount, err := s.redisCache.GetActiveSessionsCount(ctx)
 	if err != nil {

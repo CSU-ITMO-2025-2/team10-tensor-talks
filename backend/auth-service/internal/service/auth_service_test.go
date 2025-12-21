@@ -87,10 +87,19 @@ func TestNormalizeLogin(t *testing.T) {
 }
 
 func TestValidateCredentials(t *testing.T) {
-	assert.NoError(t, validateCredentials("user", "password"))
-	assert.Error(t, validateCredentials("us", "password"))
-	assert.Error(t, validateCredentials("user name", "password"))
-	assert.Error(t, validateCredentials("user", "123"))
+	// Валидные креденшалы
+	assert.NoError(t, validateCredentials("user", "password1"))
+	assert.NoError(t, validateCredentials("user", "pass1234"))
+
+	// Невалидные логины
+	assert.Error(t, validateCredentials("us", "password1"))
+	assert.Error(t, validateCredentials("user name", "password1"))
+
+	// Невалидные пароли
+	assert.Error(t, validateCredentials("user", "123"))      // слишком короткий
+	assert.Error(t, validateCredentials("user", "password")) // нет цифры
+	assert.Error(t, validateCredentials("user", "12345678")) // нет буквы
+	assert.Error(t, validateCredentials("user", "pass1"))    // слишком короткий (< 8 символов)
 }
 
 func TestHashPassword(t *testing.T) {
@@ -109,7 +118,7 @@ func TestRegisterSuccess(t *testing.T) {
 			RefreshToken: "refresh",
 		},
 	}
-	svc := NewAuthService(store, tokens)
+	svc := NewAuthService(store, tokens, nil)
 
 	user, pair, err := svc.Register(context.Background(), "UserName", "password123")
 	require.NoError(t, err)
@@ -137,7 +146,7 @@ func TestLoginSuccess(t *testing.T) {
 			RefreshToken: "refresh",
 		},
 	}
-	svc := NewAuthService(store, tokens)
+	svc := NewAuthService(store, tokens, nil)
 
 	user, pair, err := svc.Login(context.Background(), "username", "password123")
 	require.NoError(t, err)
@@ -159,7 +168,7 @@ func TestLoginInvalidPassword(t *testing.T) {
 	tokens := &mockTokenManager{
 		pair: tokens.TokenPair{},
 	}
-	svc := NewAuthService(store, tokens)
+	svc := NewAuthService(store, tokens, nil)
 
 	_, _, err = svc.Login(context.Background(), "username", "wrong")
 	assert.ErrorIs(t, err, ErrInvalidCredentials)
@@ -189,7 +198,7 @@ func TestRefreshSuccess(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAuthService(store, tokensManager)
+	svc := NewAuthService(store, tokensManager, nil)
 
 	user, pair, err := svc.Refresh(context.Background(), "refresh")
 	require.NoError(t, err)
@@ -202,7 +211,7 @@ func TestRefreshInvalidToken(t *testing.T) {
 	tokensManager := &mockTokenManager{
 		validateErr: errors.New("invalid"),
 	}
-	svc := NewAuthService(store, tokensManager)
+	svc := NewAuthService(store, tokensManager, nil)
 
 	_, _, err := svc.Refresh(context.Background(), "refresh")
 	assert.ErrorIs(t, err, ErrInvalidToken)
@@ -227,12 +236,12 @@ func TestValidateToken(t *testing.T) {
 			},
 		},
 	}
-	svc := NewAuthService(newMockUserStore(), tokensManager)
+	svc := NewAuthService(newMockUserStore(), tokensManager, nil)
 
-	claims, err := svc.ValidateToken("access")
+	claims, err := svc.ValidateToken(context.Background(), "access")
 	require.NoError(t, err)
 	assert.Equal(t, "username", claims.Login)
 
-	_, err = svc.ValidateToken("refresh")
+	_, err = svc.ValidateToken(context.Background(), "refresh")
 	assert.ErrorIs(t, err, ErrInvalidToken)
 }

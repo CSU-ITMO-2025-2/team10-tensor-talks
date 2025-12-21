@@ -272,3 +272,54 @@ func (c *SessionCRUDClient) GetSessionsByUserID(ctx context.Context, userID uuid
 
 	return sessions, nil
 }
+
+// GetActiveSessionByUserIDResponse ответ с активной сессией.
+type GetActiveSessionByUserIDResponse struct {
+	Session struct {
+		SessionID        uuid.UUID                `json:"session_id"`
+		UserID           uuid.UUID                `json:"user_id"`
+		StartTime        string                   `json:"start_time"`
+		EndTime          *string                  `json:"end_time,omitempty"`
+		Params           models.SessionParams     `json:"params"`
+		InterviewProgram *models.InterviewProgram `json:"interview_program,omitempty"`
+	} `json:"session"`
+}
+
+// GetActiveSessionByUserID возвращает активную сессию пользователя (end_time IS NULL).
+func (c *SessionCRUDClient) GetActiveSessionByUserID(ctx context.Context, userID uuid.UUID) (*GetActiveSessionByUserIDResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/sessions/user/"+userID.String()+"/active", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("active session not found")
+		}
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(body, &errResp); err == nil {
+			return nil, fmt.Errorf("session crud service error: %s", errResp.Error)
+		}
+		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var sessionResp GetActiveSessionByUserIDResponse
+	if err := json.Unmarshal(body, &sessionResp); err != nil {
+		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	return &sessionResp, nil
+}

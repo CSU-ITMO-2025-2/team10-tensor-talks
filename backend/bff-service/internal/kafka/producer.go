@@ -85,6 +85,48 @@ func (p *Producer) SendUserMessage(sessionID, userID, content, messageID, reques
 	return p.sendEvent(event)
 }
 
+// SendChatTerminated отправляет событие досрочного завершения чата пользователем.
+func (p *Producer) SendChatTerminated(sessionID, userID, requestID string) error {
+	event := ChatEvent{
+		EventID:   uuid.New().String(),
+		EventType: "chat.terminated",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Service:   p.serviceName,
+		Version:   p.version,
+		Payload: map[string]interface{}{
+			"session_id":    sessionID,
+			"user_id":       userID,
+			"terminated_at": time.Now().UTC().Format(time.RFC3339),
+		},
+		Metadata: map[string]string{
+			"request_id": requestID,
+		},
+	}
+
+	return p.sendEvent(event)
+}
+
+// SendChatResumed отправляет событие восстановления активной сессии чата.
+func (p *Producer) SendChatResumed(sessionID, userID, requestID string) error {
+	event := ChatEvent{
+		EventID:   uuid.New().String(),
+		EventType: "chat.resumed",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Service:   p.serviceName,
+		Version:   p.version,
+		Payload: map[string]interface{}{
+			"session_id": sessionID,
+			"user_id":    userID,
+			"resumed_at": time.Now().UTC().Format(time.RFC3339),
+		},
+		Metadata: map[string]string{
+			"request_id": requestID,
+		},
+	}
+
+	return p.sendEvent(event)
+}
+
 func (p *Producer) sendEvent(event ChatEvent) error {
 	data, err := json.Marshal(event)
 	if err != nil {

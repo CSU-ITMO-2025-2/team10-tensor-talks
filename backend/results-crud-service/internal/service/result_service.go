@@ -19,11 +19,12 @@ func NewResultService(repo repository.ResultRepository) *ResultService {
 }
 
 // CreateResult создаёт новый результат.
-func (s *ResultService) CreateResult(ctx context.Context, sessionID uuid.UUID, score int, feedback string) (*models.Result, error) {
+func (s *ResultService) CreateResult(ctx context.Context, sessionID uuid.UUID, score int, feedback string, terminatedEarly bool) (*models.Result, error) {
 	result := &models.Result{
-		SessionID: sessionID,
-		Score:     score,
-		Feedback:  feedback,
+		SessionID:       sessionID,
+		Score:           score,
+		Feedback:        feedback,
+		TerminatedEarly: terminatedEarly,
 	}
 
 	if err := s.repo.Create(ctx, result); err != nil {

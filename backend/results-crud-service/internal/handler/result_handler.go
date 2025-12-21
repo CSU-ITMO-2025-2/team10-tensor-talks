@@ -31,9 +31,10 @@ func (h *ResultHandler) RegisterRoutes(router gin.IRouter) {
 }
 
 type createResultRequest struct {
-	SessionID uuid.UUID `json:"session_id" binding:"required"`
-	Score     int       `json:"score" binding:"required"`
-	Feedback  string    `json:"feedback" binding:"required"`
+	SessionID       uuid.UUID `json:"session_id" binding:"required"`
+	Score           int       `json:"score" binding:"required"`
+	Feedback        string    `json:"feedback" binding:"required"`
+	TerminatedEarly bool      `json:"terminated_early,omitempty"`
 }
 
 // CreateResult создаёт новый результат.
@@ -45,7 +46,7 @@ func (h *ResultHandler) CreateResult(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.CreateResult(c.Request.Context(), req.SessionID, req.Score, req.Feedback)
+	result, err := h.svc.CreateResult(c.Request.Context(), req.SessionID, req.Score, req.Feedback, req.TerminatedEarly)
 	if err != nil {
 		metrics.BusinessResultOperationsTotal.WithLabelValues("results-crud-service", "create", "error").Inc()
 		h.logger.Error("CreateResult failed", zap.Error(err))

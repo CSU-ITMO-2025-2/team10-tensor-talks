@@ -8,7 +8,7 @@ auth_service:
 
 session_service:
   base_url: "http://session-service:8083"
-  timeout_seconds: 35  # Increased to allow time for interview program building (session-service waits 30s)
+  timeout_seconds: 50  # Increased to allow time for interview program building (session-service waits 30s, need buffer)
 
 session_crud:
   base_url: "http://session-crud-service:8085"

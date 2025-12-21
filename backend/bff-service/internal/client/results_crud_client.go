@@ -29,12 +29,13 @@ func NewResultsCRUDClient(baseURL string, timeoutSeconds int) *ResultsCRUDClient
 
 // Result представляет результат интервью.
 type Result struct {
-	ID        uint      `json:"id"`
-	SessionID uuid.UUID `json:"session_id"`
-	Score     int       `json:"score"`
-	Feedback  string    `json:"feedback"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              uint      `json:"id"`
+	SessionID       uuid.UUID `json:"session_id"`
+	Score           int       `json:"score"`
+	Feedback        string    `json:"feedback"`
+	TerminatedEarly bool      `json:"terminated_early"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // GetResultResponse ответ с результатом.

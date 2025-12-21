@@ -21,6 +21,8 @@ type Consumer struct {
 type EventHandler interface {
 	HandleChatStarted(ctx context.Context, sessionID, userID string) error
 	HandleUserMessage(ctx context.Context, sessionID, userID, content, messageID string) error
+	HandleChatResumed(ctx context.Context, sessionID, userID string) error
+	HandleChatTerminated(ctx context.Context, sessionID, userID string) error
 }
 
 // NewConsumer создаёт новый Kafka consumer.
@@ -159,6 +161,22 @@ func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 					messageID, _ := event.Payload["message_id"].(string)
 					if err := h.consumer.eventHandler.HandleUserMessage(ctx, sessionID, userID, content, messageID); err != nil {
 						h.logger.Error("Failed to handle user message",
+							zap.Error(err),
+							zap.String("session_id", sessionID),
+						)
+					}
+
+				case "chat.resumed":
+					if err := h.consumer.eventHandler.HandleChatResumed(ctx, sessionID, userID); err != nil {
+						h.logger.Error("Failed to handle chat resumed",
+							zap.Error(err),
+							zap.String("session_id", sessionID),
+						)
+					}
+
+				case "chat.terminated":
+					if err := h.consumer.eventHandler.HandleChatTerminated(ctx, sessionID, userID); err != nil {
+						h.logger.Error("Failed to handle chat terminated",
 							zap.Error(err),
 							zap.String("session_id", sessionID),
 						)

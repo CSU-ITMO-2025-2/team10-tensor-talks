@@ -43,6 +43,29 @@ func (s *ChatService) GetChatDump(ctx context.Context, sessionID uuid.UUID) (*mo
 	return s.repo.GetChatDumpBySessionID(ctx, sessionID)
 }
 
+// GetActiveChatJSON возвращает JSON структуру незавершенного чата из сообщений.
+func (s *ChatService) GetActiveChatJSON(ctx context.Context, sessionID uuid.UUID) (*models.ChatJSONB, error) {
+	// Получаем все сообщения
+	messages, err := s.repo.GetMessagesBySessionID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Формируем JSONB структуру
+	chatMessages := make([]models.ChatMessage, 0, len(messages))
+	for _, msg := range messages {
+		chatMessages = append(chatMessages, models.ChatMessage{
+			Type:      string(msg.Type),
+			Content:   msg.Content,
+			CreatedAt: msg.CreatedAt,
+		})
+	}
+
+	return &models.ChatJSONB{
+		Messages: chatMessages,
+	}, nil
+}
+
 // CreateChatDump создаёт дамп чата из сообщений.
 func (s *ChatService) CreateChatDump(ctx context.Context, sessionID uuid.UUID) error {
 	// Получаем все сообщения

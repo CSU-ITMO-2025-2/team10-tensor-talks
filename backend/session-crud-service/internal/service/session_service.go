@@ -44,6 +44,11 @@ func (s *SessionService) GetSessionsByUserID(ctx context.Context, userID uuid.UU
 	return s.repo.GetByUserID(ctx, userID)
 }
 
+// GetActiveSessionByUserID возвращает активную сессию пользователя (где end_time IS NULL).
+func (s *SessionService) GetActiveSessionByUserID(ctx context.Context, userID uuid.UUID) (*models.Session, error) {
+	return s.repo.GetActiveSessionByUserID(ctx, userID)
+}
+
 // UpdateProgram обновляет программу интервью сессии.
 func (s *SessionService) UpdateProgram(ctx context.Context, sessionID uuid.UUID, program *models.InterviewProgram) error {
 	return s.repo.UpdateProgram(ctx, sessionID, program)

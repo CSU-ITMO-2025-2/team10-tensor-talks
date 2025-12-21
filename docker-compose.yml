@@ -539,7 +539,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8085:8085"  # FastAPI app
+      - "8086:8085"  # FastAPI app
       - "9091:9091"  # Metrics
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
