@@ -50,6 +50,9 @@ func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
 	}
 
 	sessionClient := client.NewSessionClient(cfg.SessionService.BaseURL, cfg.SessionService.TimeoutSeconds)
+	sessionCRUDClient := client.NewSessionCRUDClient(cfg.SessionCRUD.BaseURL, cfg.SessionCRUD.TimeoutSeconds)
+	chatCRUDClient := client.NewChatCRUDClient(cfg.ChatCRUD.BaseURL, cfg.ChatCRUD.TimeoutSeconds)
+	resultsCRUDClient := client.NewResultsCRUDClient(cfg.ResultsCRUD.BaseURL, cfg.ResultsCRUD.TimeoutSeconds)
 
 	// Инициализация Kafka producer
 	brokers := cfg.Kafka.Brokers
@@ -80,7 +83,14 @@ func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
 	}
 
 	authService := service.NewAuthService(authClient)
-	chatService := service.NewChatService(sessionClient, kafkaProducer, logger)
+	chatService := service.NewChatService(
+		sessionClient,
+		sessionCRUDClient,
+		chatCRUDClient,
+		resultsCRUDClient,
+		kafkaProducer,
+		logger,
+	)
 
 	// Устанавливаем обработчик событий для consumer
 	kafkaConsumer.SetEventHandler(chatService)

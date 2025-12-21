@@ -35,6 +35,8 @@ Kafka используется для асинхронной обработки 
 
 - `chat.events.out` — события от BFF к модели (старт чата, ответ пользователя)
 - `chat.events.in` — события от модели к BFF (вопрос от модели, результаты, окончание чата)
+- `interview.build.request` — запрос на создание программы интервью (session-manager → interview-builder)
+- `interview.build.response` — ответ с программой интервью (interview-builder → session-manager)
 
 ### Partitions (Партиции)
 
@@ -213,6 +215,86 @@ Kafka используется для асинхронной обработки 
   - `feedback` (string) — текстовая обратная связь
   - `recommendations` (array of strings) — рекомендации для улучшения
 - `completed_at` (string, ISO 8601) — время завершения чата
+
+### Новые топики для создания программы интервью
+
+#### Топик `interview.build.request` (Session Manager → Interview Builder)
+
+**Событие `interview.build.request`:**
+
+Отправляется когда session-manager запрашивает создание программы интервью для новой сессии.
+
+```json
+{
+  "event_id": "evt-build-001",
+  "event_type": "interview.build.request",
+  "timestamp": "2025-01-15T10:30:00.123Z",
+  "service": "session-manager-service",
+  "version": "1.0.0",
+  "payload": {
+    "session_id": "session-xyz789",
+    "params": {
+      "topics": ["ml", "nlp"],
+      "level": "middle",
+      "type": "interview"
+    }
+  },
+  "metadata": {
+    "request_id": "req-build-123"
+  }
+}
+```
+
+**Поля payload:**
+- `session_id` (string, UUID) — идентификатор сессии
+- `params` (object) — параметры интервьюируемого:
+  - `topics` (array of strings) — темы интервью
+  - `level` (string) — уровень сложности (junior, middle, senior)
+  - `type` (string) — тип интервью (interview, training)
+
+#### Топик `interview.build.response` (Interview Builder → Session Manager)
+
+**Событие `interview.build.response`:**
+
+Отправляется когда interview-builder готовит программу интервью.
+
+```json
+{
+  "event_id": "evt-build-002",
+  "event_type": "interview.build.response",
+  "timestamp": "2025-01-15T10:30:05.456Z",
+  "service": "mock-interview-builder-service",
+  "version": "1.0.0",
+  "payload": {
+    "session_id": "session-xyz789",
+    "program": {
+      "questions": [
+        {
+          "question": "Объясните разницу между L1 и L2 регуляризацией.",
+          "theory": "L1 регуляризация (Lasso) добавляет сумму абсолютных значений весов...",
+          "order": 1
+        },
+        {
+          "question": "Как работает кросс-валидация k-fold?",
+          "theory": "Кросс-валидация k-fold разделяет данные на k частей...",
+          "order": 2
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "correlation_id": "evt-build-001"
+  }
+}
+```
+
+**Поля payload:**
+- `session_id` (string, UUID) — идентификатор сессии
+- `program` (object) — программа интервью:
+  - `questions` (array of objects) — упорядоченный список вопросов:
+    - `question` (string) — текст вопроса
+    - `theory` (string) — теория к вопросу
+    - `order` (number) — порядковый номер вопроса
 
 ## Использование в Go-микросервисах
 

@@ -9,5 +9,16 @@ kafka:
   consumer_group: "mock-model-service-group"
 
 model:
-  max_questions: 5
   question_delay_seconds: 2
+
+session_manager:
+  base_url: "http://session-service:8083"
+  timeout_seconds: 5
+
+chat_crud:
+  base_url: "http://chat-crud-service:8087"
+  timeout_seconds: 5
+
+results_crud:
+  base_url: "http://results-crud-service:8088"
+  timeout_seconds: 5

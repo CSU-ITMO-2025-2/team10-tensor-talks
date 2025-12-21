@@ -26,8 +26,29 @@ type Config struct {
 	Server         ServerConfig         `mapstructure:"server"`
 	AuthService    AuthServiceConfig    `mapstructure:"auth_service"`
 	SessionService SessionServiceConfig `mapstructure:"session_service"`
+	SessionCRUD    SessionCRUDConfig    `mapstructure:"session_crud"`
+	ChatCRUD       ChatCRUDConfig       `mapstructure:"chat_crud"`
+	ResultsCRUD    ResultsCRUDConfig    `mapstructure:"results_crud"`
 	Kafka          KafkaConfig          `mapstructure:"kafka"`
 	CORS           CORSConfig           `mapstructure:"cors"`
+}
+
+// SessionCRUDConfig содержит параметры подключения к session-crud-service.
+type SessionCRUDConfig struct {
+	BaseURL        string `mapstructure:"base_url"`
+	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
+}
+
+// ChatCRUDConfig содержит параметры подключения к chat-crud-service.
+type ChatCRUDConfig struct {
+	BaseURL        string `mapstructure:"base_url"`
+	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
+}
+
+// ResultsCRUDConfig содержит параметры подключения к results-crud-service.
+type ResultsCRUDConfig struct {
+	BaseURL        string `mapstructure:"base_url"`
+	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
 }
 
 // ServerConfig описывает настройки HTTP-сервера BFF.
@@ -108,6 +129,26 @@ func Load() (Config, error) {
 	// Если brokers все еще пустой, используем значение по умолчанию
 	if len(cfg.Kafka.Brokers) == 0 {
 		cfg.Kafka.Brokers = []string{"kafka:9092"}
+	}
+
+	// Значения по умолчанию для новых сервисов
+	if cfg.SessionCRUD.BaseURL == "" {
+		cfg.SessionCRUD.BaseURL = "http://session-crud-service:8085"
+	}
+	if cfg.SessionCRUD.TimeoutSeconds == 0 {
+		cfg.SessionCRUD.TimeoutSeconds = 5
+	}
+	if cfg.ChatCRUD.BaseURL == "" {
+		cfg.ChatCRUD.BaseURL = "http://chat-crud-service:8087"
+	}
+	if cfg.ChatCRUD.TimeoutSeconds == 0 {
+		cfg.ChatCRUD.TimeoutSeconds = 5
+	}
+	if cfg.ResultsCRUD.BaseURL == "" {
+		cfg.ResultsCRUD.BaseURL = "http://results-crud-service:8088"
+	}
+	if cfg.ResultsCRUD.TimeoutSeconds == 0 {
+		cfg.ResultsCRUD.TimeoutSeconds = 5
 	}
 
 	return cfg, nil

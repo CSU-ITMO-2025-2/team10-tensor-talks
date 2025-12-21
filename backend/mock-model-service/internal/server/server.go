@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/tensor-talks/mock-model-service/internal/client"
 	"github.com/tensor-talks/mock-model-service/internal/config"
 	"github.com/tensor-talks/mock-model-service/internal/kafka"
 	"github.com/tensor-talks/mock-model-service/internal/service"
@@ -49,10 +50,26 @@ func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
 		return nil, fmt.Errorf("init kafka consumer: %w", err)
 	}
 
-	// Создаём сервис модели
+	// Инициализация клиентов
+	sessionManagerClient := client.NewSessionManagerClient(
+		cfg.SessionManager.BaseURL,
+		cfg.SessionManager.TimeoutSeconds,
+	)
+	chatCRUDClient := client.NewChatCRUDClient(
+		cfg.ChatCRUD.BaseURL,
+		cfg.ChatCRUD.TimeoutSeconds,
+	)
+	resultsCRUDClient := client.NewResultsCRUDClient(
+		cfg.ResultsCRUD.BaseURL,
+		cfg.ResultsCRUD.TimeoutSeconds,
+	)
+
+	// Создаём сервис модели (будущий marking-service)
 	modelService := service.NewModelService(
 		kafkaProducer,
-		cfg.Model.MaxQuestions,
+		sessionManagerClient,
+		chatCRUDClient,
+		resultsCRUDClient,
 		cfg.Model.QuestionDelaySeconds,
 		logger,
 	)

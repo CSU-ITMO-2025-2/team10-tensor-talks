@@ -6,63 +6,114 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/tensor-talks/mock-model-service/internal/client"
 	"github.com/tensor-talks/mock-model-service/internal/kafka"
 	"github.com/tensor-talks/mock-model-service/internal/model"
 	"go.uber.org/zap"
 )
 
 // ModelService обрабатывает события чата и генерирует ответы модели.
+// В будущем это будет marking-service.
 type ModelService struct {
-	producer      *kafka.Producer
-	sessionMgr    *model.SessionManager
-	logger        *zap.Logger
-	maxQuestions  int
-	questionDelay time.Duration
+	producer         *kafka.Producer
+	sessionMgr       *model.SessionManager
+	sessionManagerCl *client.SessionManagerClient
+	chatCRUDCl       *client.ChatCRUDClient
+	resultsCRUDCl    *client.ResultsCRUDClient
+	logger           *zap.Logger
+	questionDelay    time.Duration
 }
 
 // NewModelService создаёт новый сервис модели.
-func NewModelService(producer *kafka.Producer, maxQuestions, questionDelaySeconds int, logger *zap.Logger) *ModelService {
+func NewModelService(
+	producer *kafka.Producer,
+	sessionManagerCl *client.SessionManagerClient,
+	chatCRUDCl *client.ChatCRUDClient,
+	resultsCRUDCl *client.ResultsCRUDClient,
+	questionDelaySeconds int,
+	logger *zap.Logger,
+) *ModelService {
 	return &ModelService{
-		producer:      producer,
-		sessionMgr:    model.NewSessionManager(),
-		logger:        logger,
-		maxQuestions:  maxQuestions,
-		questionDelay: time.Duration(questionDelaySeconds) * time.Second,
+		producer:         producer,
+		sessionMgr:       model.NewSessionManager(),
+		sessionManagerCl: sessionManagerCl,
+		chatCRUDCl:       chatCRUDCl,
+		resultsCRUDCl:    resultsCRUDCl,
+		logger:           logger,
+		questionDelay:    time.Duration(questionDelaySeconds) * time.Second,
 	}
 }
 
-// HandleChatStarted обрабатывает начало чата - отправляет первый вопрос.
+// HandleChatStarted обрабатывает начало чата - получает программу интервью и отправляет первый вопрос.
 func (s *ModelService) HandleChatStarted(ctx context.Context, sessionID, userID string) error {
-	s.logger.Info("Chat started, sending first question",
+	s.logger.Info("Chat started, getting interview program",
 		zap.String("session_id", sessionID),
 		zap.String("user_id", userID),
 	)
 
-	// Создаём или получаем состояние сессии
+	// Парсим sessionID
+	sessionUUID, err := uuid.Parse(sessionID)
+	if err != nil {
+		return fmt.Errorf("invalid session_id: %w", err)
+	}
+
+	// Получаем программу интервью от session-manager
+	program, err := s.sessionManagerCl.GetInterviewProgram(ctx, sessionUUID)
+	if err != nil {
+		return fmt.Errorf("get interview program: %w", err)
+	}
+
+	s.logger.Info("Interview program received",
+		zap.String("session_id", sessionID),
+		zap.Int("questions_count", len(program.Questions)),
+	)
+
+	// Создаём или получаем состояние сессии и устанавливаем программу
 	s.sessionMgr.GetOrCreate(sessionID, userID)
+	s.sessionMgr.SetProgram(sessionID, program)
 
 	// Небольшая задержка перед отправкой первого вопроса
 	time.Sleep(s.questionDelay)
 
-	// Отправляем первый вопрос (индекс 0)
-	question := model.GetQuestionByIndex(0)
-	if err := s.producer.SendModelQuestion(sessionID, userID, question); err != nil {
+	// Получаем первый вопрос из программы
+	firstQuestion, ok := s.sessionMgr.GetNextQuestion(sessionID)
+	if !ok {
+		return fmt.Errorf("no questions in program")
+	}
+
+	// Сначала сохраняем сообщение в chat-crud
+	systemMsg := fmt.Sprintf("Вопрос: %s", firstQuestion)
+	if err := s.chatCRUDCl.SaveMessage(ctx, sessionUUID, client.MessageTypeSystem, systemMsg); err != nil {
+		s.logger.Warn("Failed to save system message to chat-crud, continuing",
+			zap.String("session_id", sessionID),
+			zap.Error(err),
+		)
+		// Продолжаем, даже если не удалось сохранить
+	} else {
+		s.logger.Info("System message saved to chat-crud",
+			zap.String("session_id", sessionID),
+		)
+	}
+
+	// Затем отправляем вопрос в Kafka
+	if err := s.producer.SendModelQuestion(sessionID, userID, firstQuestion); err != nil {
 		return fmt.Errorf("send first question: %w", err)
 	}
 
-	// Увеличиваем счётчик вопросов (теперь 1)
+	// Увеличиваем счётчик вопросов
 	s.sessionMgr.IncrementQuestion(sessionID)
 
 	s.logger.Info("First question sent",
 		zap.String("session_id", sessionID),
-		zap.String("question", question),
+		zap.String("question", firstQuestion),
 		zap.Int("question_number", 1),
 	)
 
 	return nil
 }
 
-// HandleUserMessage обрабатывает сообщение пользователя - отправляет следующий вопрос или завершает чат.
+// HandleUserMessage обрабатывает сообщение пользователя - сохраняет его, затем отправляет следующий вопрос или завершает чат.
 func (s *ModelService) HandleUserMessage(ctx context.Context, sessionID, userID, content, messageID string) error {
 	s.logger.Info("User message received",
 		zap.String("session_id", sessionID),
@@ -71,37 +122,84 @@ func (s *ModelService) HandleUserMessage(ctx context.Context, sessionID, userID,
 		zap.String("content", content),
 	)
 
+	// Парсим sessionID
+	sessionUUID, err := uuid.Parse(sessionID)
+	if err != nil {
+		return fmt.Errorf("invalid session_id: %w", err)
+	}
+
+	// Сначала сохраняем сообщение пользователя в chat-crud
+	if err := s.chatCRUDCl.SaveMessage(ctx, sessionUUID, client.MessageTypeUser, content); err != nil {
+		s.logger.Warn("Failed to save user message to chat-crud, continuing",
+			zap.String("session_id", sessionID),
+			zap.Error(err),
+		)
+		// Продолжаем, даже если не удалось сохранить
+	} else {
+		s.logger.Info("User message saved to chat-crud",
+			zap.String("session_id", sessionID),
+		)
+	}
+
 	// Получаем состояние сессии
 	s.sessionMgr.GetOrCreate(sessionID, userID)
-	currentQuestions := s.sessionMgr.GetQuestionCount(sessionID)
 
-	s.logger.Info("Processing user message",
-		zap.String("session_id", sessionID),
-		zap.Int("questions_asked", currentQuestions),
-		zap.Int("max_questions", s.maxQuestions),
-	)
-
-	// Проверяем, нужно ли завершить чат (после ответа на последний вопрос)
-	// Если уже задано max_questions вопросов, значит пользователь ответил на последний - завершаем
-	if currentQuestions >= s.maxQuestions {
-		s.logger.Info("Max questions reached, completing chat",
+	// Проверяем, есть ли ещё вопросы в программе
+	if s.sessionMgr.ShouldComplete(sessionID) {
+		questionsAsked := s.sessionMgr.GetQuestionCount(sessionID)
+		s.logger.Info("All questions answered, completing chat",
 			zap.String("session_id", sessionID),
-			zap.Int("questions_asked", currentQuestions),
+			zap.Int("questions_asked", questionsAsked),
 		)
 
 		// Генерируем результаты
-		score := s.generateScore(currentQuestions)
+		score := s.generateScore(questionsAsked)
 		feedback := s.generateFeedback(score)
-		recommendations := s.generateRecommendations(score)
 
 		// Небольшая задержка перед завершением
 		time.Sleep(s.questionDelay)
 
+		// Сохраняем финальное сообщение системы (последнее)
+		completionMsg := "Интервью завершено. Результаты будут доступны в разделе результатов."
+		if err := s.chatCRUDCl.SaveMessage(ctx, sessionUUID, client.MessageTypeSystem, completionMsg); err != nil {
+			s.logger.Warn("Failed to save completion message to chat-crud",
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
+		}
+
+		// Сигнализируем chat-crud о завершении чата (создаём дамп)
+		if err := s.chatCRUDCl.CreateChatDump(ctx, sessionUUID); err != nil {
+			s.logger.Warn("Failed to create chat dump",
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
+		}
+
+		// Сохраняем результаты в results-crud
+		if err := s.resultsCRUDCl.SaveResult(ctx, sessionUUID, score, feedback); err != nil {
+			s.logger.Error("Failed to save result to results-crud",
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
+			// Продолжаем, даже если не удалось сохранить результат
+		}
+
+		// Закрываем сессию в session-manager
+		if err := s.sessionManagerCl.CloseSession(ctx, sessionUUID); err != nil {
+			s.logger.Warn("Failed to close session in session-manager",
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
+		}
+
+		// Отправляем событие завершения в Kafka (с результатами)
+		recommendations := s.generateRecommendations(score)
 		if err := s.producer.SendChatCompleted(sessionID, userID, score, feedback, recommendations); err != nil {
 			return fmt.Errorf("send chat completed: %w", err)
 		}
 
-		// Удаляем сессию
+		// Удаляем сессию из локального менеджера
 		s.sessionMgr.Delete(sessionID)
 
 		s.logger.Info("Chat completed",
@@ -115,9 +213,27 @@ func (s *ModelService) HandleUserMessage(ctx context.Context, sessionID, userID,
 	// Отправляем следующий вопрос
 	time.Sleep(s.questionDelay)
 
-	// Используем индекс для разнообразия вопросов (currentQuestions уже содержит количество заданных)
-	question := model.GetQuestionByIndex(currentQuestions)
-	if err := s.producer.SendModelQuestion(sessionID, userID, question); err != nil {
+	// Получаем следующий вопрос из программы
+	nextQuestion, ok := s.sessionMgr.GetNextQuestion(sessionID)
+	if !ok {
+		return fmt.Errorf("failed to get next question from program")
+	}
+
+	// Сначала сохраняем сообщение системы в chat-crud
+	systemMsg := fmt.Sprintf("Вопрос: %s", nextQuestion)
+	if err := s.chatCRUDCl.SaveMessage(ctx, sessionUUID, client.MessageTypeSystem, systemMsg); err != nil {
+		s.logger.Warn("Failed to save system message to chat-crud, continuing",
+			zap.String("session_id", sessionID),
+			zap.Error(err),
+		)
+	} else {
+		s.logger.Info("System message saved to chat-crud",
+			zap.String("session_id", sessionID),
+		)
+	}
+
+	// Затем отправляем вопрос в Kafka
+	if err := s.producer.SendModelQuestion(sessionID, userID, nextQuestion); err != nil {
 		return fmt.Errorf("send question: %w", err)
 	}
 
@@ -126,7 +242,7 @@ func (s *ModelService) HandleUserMessage(ctx context.Context, sessionID, userID,
 
 	s.logger.Info("Question sent",
 		zap.String("session_id", sessionID),
-		zap.String("question", question),
+		zap.String("question", nextQuestion),
 		zap.Int("question_number", s.sessionMgr.GetQuestionCount(sessionID)),
 	)
 

@@ -105,7 +105,12 @@ export default function Chat() {
   const startNewChat = async (userId: string) => {
     try {
       setIsLoading(true)
-      const response = await startChat(userId)
+      // Параметры интервью по умолчанию
+      const response = await startChat(userId, {
+        topics: ['ML Basics'],
+        level: 'middle',
+        type: 'interview'
+      })
       setSessionId(response.session_id)
       navigate(`/chat/${response.session_id}`, { replace: true })
       // Запускаем polling после создания сессии

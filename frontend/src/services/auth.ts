@@ -23,7 +23,20 @@ async function request<T>(path: string, options: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const data = await response.json().catch(() => null);
-    const message = data?.error ?? 'Произошла ошибка. Попробуйте еще раз.';
+    // Используем детальное сообщение об ошибке из backend, если оно есть
+    let message = data?.error ?? 'Произошла ошибка. Попробуйте еще раз.';
+    
+    // Улучшаем сообщения для пользователя
+    if (message === 'internal error') {
+      message = 'Внутренняя ошибка сервера. Пожалуйста, попробуйте позже.';
+    } else if (message === 'login already exists') {
+      message = 'Пользователь с таким логином уже существует.';
+    } else if (message === 'invalid credentials') {
+      message = 'Неверный логин или пароль.';
+    } else if (message === 'invalid payload') {
+      message = 'Некорректные данные. Проверьте введенные значения.';
+    }
+    
     throw new Error(message);
   }
 

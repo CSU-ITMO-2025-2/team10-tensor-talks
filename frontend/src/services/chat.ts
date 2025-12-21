@@ -22,15 +22,25 @@ async function request<T>(path: string, options: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export interface StartChatResponse {
-  session_id: string;
+export interface SessionParams {
+  topics: string[];
+  level: string; // junior, middle, senior
+  type: string;  // interview, training
 }
 
-export async function startChat(userId: string): Promise<StartChatResponse> {
+export interface StartChatResponse {
+  session_id: string;
+  ready: boolean;
+}
+
+export async function startChat(userId: string, params: SessionParams): Promise<StartChatResponse> {
   try {
     const response = await request<StartChatResponse>('/chat/start', {
       method: 'POST',
-      body: JSON.stringify({ user_id: userId }),
+      body: JSON.stringify({ 
+        user_id: userId,
+        params: params
+      }),
     });
     console.log('startChat response:', response);
     return response;
@@ -86,6 +96,82 @@ export async function getResults(sessionId: string): Promise<ResultsResponse | n
     if (error.message?.includes('not completed') || error.message?.includes('404')) {
       return null;
     }
+    throw error;
+  }
+}
+
+export interface InterviewInfo {
+  session_id: string;
+  start_time: string;
+  end_time?: string;
+  params: SessionParams;
+  has_results: boolean;
+  score?: number;
+  feedback?: string;
+}
+
+export interface InterviewsResponse {
+  interviews: InterviewInfo[];
+}
+
+export async function getInterviews(userId: string): Promise<InterviewInfo[]> {
+  try {
+    const response = await request<InterviewsResponse>(`/interviews?user_id=${userId}`, {
+      method: 'GET',
+    });
+    return response.interviews;
+  } catch (error) {
+    console.error('getInterviews error:', error);
+    throw error;
+  }
+}
+
+export interface ChatMessage {
+  type: string;
+  content: string;
+  created_at: string;
+}
+
+export interface ChatHistoryResponse {
+  messages: ChatMessage[];
+}
+
+export async function getInterviewChat(sessionId: string): Promise<ChatMessage[]> {
+  try {
+    const response = await request<ChatHistoryResponse>(`/interviews/${sessionId}/chat`, {
+      method: 'GET',
+    });
+    return response.messages;
+  } catch (error) {
+    console.error('getInterviewChat error:', error);
+    throw error;
+  }
+}
+
+export interface InterviewResult {
+  id: number;
+  session_id: string;
+  score: number;
+  feedback: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InterviewResultResponse {
+  result: InterviewResult;
+}
+
+export async function getInterviewResult(sessionId: string): Promise<InterviewResult | null> {
+  try {
+    const response = await request<InterviewResultResponse>(`/interviews/${sessionId}/result`, {
+      method: 'GET',
+    });
+    return response.result;
+  } catch (error: any) {
+    if (error.message?.includes('not found') || error.message?.includes('404')) {
+      return null;
+    }
+    console.error('getInterviewResult error:', error);
     throw error;
   }
 }

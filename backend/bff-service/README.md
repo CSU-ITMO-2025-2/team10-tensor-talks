@@ -35,6 +35,9 @@
   - `server.host`, `server.port` — HTTP-сервер;
   - `auth_service.base_url`, `auth_service.timeout_seconds` — подключение к `auth-service`;
   - `session_service.base_url`, `session_service.timeout_seconds` — подключение к `session-service`;
+  - `session_crud.base_url`, `session_crud.timeout_seconds` — подключение к `session-crud-service`;
+  - `chat_crud.base_url`, `chat_crud.timeout_seconds` — подключение к `chat-crud-service`;
+  - `results_crud.base_url`, `results_crud.timeout_seconds` — подключение к `results-crud-service`;
   - `kafka.brokers`, `kafka.topic_chat_out`, `kafka.topic_chat_in`, `kafka.consumer_group` — настройки Kafka;
   - `cors.allow_origins`, `cors.allow_headers` — настройки CORS.
 
@@ -46,7 +49,15 @@
     - `Refresh(refreshToken)` — обновление токенов;
     - `Me(accessToken)` — получение текущего пользователя.
   - `SessionClient` — клиент к `session-service`:
-    - `CreateSession(userID)` — создание новой сессии чата.
+    - `CreateSession(userID, params)` — создание новой сессии чата с параметрами интервью.
+  - `SessionCRUDClient` — клиент к `session-crud-service`:
+    - `GetSessionsByUserID(userID)` — получение всех сессий пользователя.
+  - `ChatCRUDClient` — клиент к `chat-crud-service`:
+    - `GetMessages(sessionID)` — получение всех сообщений сессии;
+    - `GetChatDump(sessionID)` — получение дампа завершенного чата.
+  - `ResultsCRUDClient` — клиент к `results-crud-service`:
+    - `GetResult(sessionID)` — получение результата по session_id;
+    - `GetResults(sessionIDs)` — получение результатов по списку session_ids.
 
 - `internal/service`  
   Бизнес-слой BFF:
@@ -65,10 +76,13 @@
   - `POST /api/auth/login` — логин;
   - `POST /api/auth/refresh` — обновление токенов;
   - `GET /api/auth/me` — информация о текущем пользователе по access-токену;
-  - `POST /api/chat/start` — начать новый чат;
+  - `POST /api/chat/start` — начать новый чат (с параметрами интервью: topics, level, type);
   - `POST /api/chat/message` — отправить сообщение в чат;
   - `GET /api/chat/:session_id/question` — получить следующий вопрос (polling);
-  - `GET /api/chat/:session_id/results` — получить результаты чата.
+  - `GET /api/chat/:session_id/results` — получить результаты чата;
+  - `GET /api/interviews?user_id=uuid` — получить список всех интервью пользователя;
+  - `GET /api/interviews/:session_id/chat` — получить историю чата по session_id;
+  - `GET /api/interviews/:session_id/result` — получить результат интервью по session_id.
 
 - `internal/middleware`  
   - CORS-мидлвара, сконфигурированная из `CORSConfig`.
@@ -93,7 +107,10 @@
 ### Работа с чатами
 
 BFF управляет чатами через:
-- `session-service` — для создания сессий;
+- `session-service` — для создания сессий с параметрами интервью (topics, level, type);
+- `session-crud-service` — для получения списка сессий пользователя;
+- `chat-crud-service` — для получения истории чатов;
+- `results-crud-service` — для получения результатов интервью;
 - Kafka — для асинхронной обработки событий чатов;
 - `mock-model-service` — обрабатывает события и генерирует вопросы/результаты.
 

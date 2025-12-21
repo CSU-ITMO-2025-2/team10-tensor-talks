@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgconn"
@@ -125,12 +126,26 @@ func mapPGError(err error) error {
 	if err == nil {
 		return nil
 	}
+
+	// Проверяем PostgreSQL ошибку напрямую
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		if pgErr.Code == "23505" {
+			return ErrDuplicateLogin
+		}
+		return err
+	}
+
+	// Проверяем GORM ошибку
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return ErrDuplicateLogin
 	}
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+
+	// Проверяем строковое представление ошибки (на случай, если GORM не оборачивает правильно)
+	errStr := err.Error()
+	if strings.Contains(errStr, "duplicate key value violates unique constraint") || strings.Contains(errStr, "23505") {
 		return ErrDuplicateLogin
 	}
+
 	return err
 }

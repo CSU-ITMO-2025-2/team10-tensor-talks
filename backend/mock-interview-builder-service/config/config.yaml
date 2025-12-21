@@ -1,0 +1,9 @@
+server:
+  host: "0.0.0.0"
+  port: 8089
+
+kafka:
+  brokers: ["kafka:9092"]
+  topic_request: "interview.build.request"
+  topic_response: "interview.build.response"
+  consumer_group: "mock-interview-builder-service-group"
