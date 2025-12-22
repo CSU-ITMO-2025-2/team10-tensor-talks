@@ -129,6 +129,13 @@ TensorTalks помогает ML-специалистам и компаниям �
   - сохраняет результаты в results-crud-service;
   - отправляет результаты обратно в Kafka.
 
+- **Dialogue Aggregator Service (dialogue-aggregator)**  
+  Центральный сервис для агрегации диалогов и управления их состоянием:
+  - агрегирует диалоги из событий Kafka;
+  - управляет состоянием диалогов в Redis;
+  - обогащает сообщения метаданными и ролями (user/assistant/system);
+  - выполняет fan-out событий в различные Kafka-топики для последующей обработки.
+
 - **PostgreSQL**  
   Хранит данные в нескольких базах:
   - `user_store_db` — таблица `users` с полями `id`, `external_id` (UUID), `login`, `password_hash`;
@@ -139,14 +146,19 @@ TensorTalks помогает ML-специалистам и компаниям �
   - `questions_crud_db` — таблица `questions` для вопросов интервью.
 
 - **Redis**  
-  Кэширование активных сессий для быстрого доступа к программам интервью.
+  Кэширование активных сессий для быстрого доступа к программам интервью, а также хранение состояния диалогов в dialogue-aggregator.
 
 - **Kafka**  
   Очереди для асинхронной обработки событий:
   - `chat.events.out` — события от BFF к модели (старт чата, сообщения пользователя);
   - `chat.events.in` — события от модели к BFF (вопросы, результаты, завершение);
   - `interview.build.request` — запрос на создание программы интервью;
-  - `interview.build.response` — ответ с готовой программой интервью.
+  - `interview.build.response` — ответ с готовой программой интервью;
+  - `publication.events` — команды для запуска процессов (dialogue.started, user.message.new);
+  - `messages.events` — события сообщений для восстановления состояния;
+  - `generated.phrases` — сгенерированные ответы от Agent Service;
+  - `messages.full.data` — полные сообщения с метаданными для LLM-агента;
+  - `history.full.events` — immutable event store для истории диалогов.
 
 ### Стек backend
 
