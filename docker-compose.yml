@@ -1,101 +1,19 @@
 services:
+  # Single PostgreSQL instance with multiple schemas for local development
+  # In Kubernetes, we use shared PostgreSQL: 79.174.89.43:18809/team10_db
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: user_store_db
-      POSTGRES_USER: user_store
-      POSTGRES_PASSWORD: user_store_password
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations/create_schemas.sql:/docker-entrypoint-initdb.d/create_schemas.sql
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user_store -d user_store_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
-
-  postgres-sessions:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: session_crud_db
-      POSTGRES_USER: session_crud
-      POSTGRES_PASSWORD: session_crud_password
-    volumes:
-      - postgres_sessions_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U session_crud -d session_crud_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
-
-  postgres-chats:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: chat_crud_db
-      POSTGRES_USER: chat_crud
-      POSTGRES_PASSWORD: chat_crud_password
-    volumes:
-      - postgres_chats_data:/var/lib/postgresql/data
-    ports:
-      - "5434:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chat_crud -d chat_crud_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
-
-  postgres-results:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: results_crud_db
-      POSTGRES_USER: results_crud
-      POSTGRES_PASSWORD: results_crud_password
-    volumes:
-      - postgres_results_data:/var/lib/postgresql/data
-    ports:
-      - "5435:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U results_crud -d results_crud_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
-
-  postgres-knowledge:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: knowledge_base_crud_db
-      POSTGRES_USER: knowledge_base_crud
-      POSTGRES_PASSWORD: knowledge_base_crud_password
-    volumes:
-      - postgres_knowledge_data:/var/lib/postgresql/data
-    ports:
-      - "5436:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U knowledge_base_crud -d knowledge_base_crud_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
-
-  postgres-questions:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: questions_crud_db
-      POSTGRES_USER: questions_crud
-      POSTGRES_PASSWORD: questions_crud_password
-    volumes:
-      - postgres_questions_data:/var/lib/postgresql/data
-    ports:
-      - "5437:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U questions_crud -d questions_crud_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -113,28 +31,17 @@ services:
       timeout: 3s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
   user-store-service:
     build:
       context: ./backend/user-store-service
     environment:
       USER_STORE_DATABASE_HOST: postgres
       USER_STORE_DATABASE_PORT: "5432"
-      USER_STORE_DATABASE_USER: user_store
-      USER_STORE_DATABASE_PASSWORD: user_store_password
-      USER_STORE_DATABASE_NAME: user_store_db
+      USER_STORE_DATABASE_USER: postgres
+      USER_STORE_DATABASE_PASSWORD: postgres
+      USER_STORE_DATABASE_NAME: postgres
       USER_STORE_DATABASE_SSL_MODE: disable
+      USER_STORE_DATABASE_SCHEMA: user_store
       USER_STORE_SERVER_HOST: "0.0.0.0"
       USER_STORE_SERVER_PORT: "8082"
     depends_on:
@@ -168,12 +75,13 @@ services:
     environment:
       SESSION_CRUD_SERVER_HOST: "0.0.0.0"
       SESSION_CRUD_SERVER_PORT: "8085"
-      SESSION_CRUD_DATABASE_HOST: postgres-sessions
+      SESSION_CRUD_DATABASE_HOST: postgres
       SESSION_CRUD_DATABASE_PORT: "5432"
-      SESSION_CRUD_DATABASE_USER: session_crud
-      SESSION_CRUD_DATABASE_PASSWORD: session_crud_password
-      SESSION_CRUD_DATABASE_NAME: session_crud_db
+      SESSION_CRUD_DATABASE_USER: postgres
+      SESSION_CRUD_DATABASE_PASSWORD: postgres
+      SESSION_CRUD_DATABASE_NAME: postgres
       SESSION_CRUD_DATABASE_SSL_MODE: disable
+      SESSION_CRUD_DATABASE_SCHEMA: session_crud
     depends_on:
       postgres-sessions:
         condition: service_healthy
@@ -186,12 +94,13 @@ services:
     environment:
       CHAT_CRUD_SERVER_HOST: "0.0.0.0"
       CHAT_CRUD_SERVER_PORT: "8087"
-      CHAT_CRUD_DATABASE_HOST: postgres-chats
+      CHAT_CRUD_DATABASE_HOST: postgres
       CHAT_CRUD_DATABASE_PORT: "5432"
-      CHAT_CRUD_DATABASE_USER: chat_crud
-      CHAT_CRUD_DATABASE_PASSWORD: chat_crud_password
-      CHAT_CRUD_DATABASE_NAME: chat_crud_db
+      CHAT_CRUD_DATABASE_USER: postgres
+      CHAT_CRUD_DATABASE_PASSWORD: postgres
+      CHAT_CRUD_DATABASE_NAME: postgres
       CHAT_CRUD_DATABASE_SSL_MODE: disable
+      CHAT_CRUD_DATABASE_SCHEMA: chat_crud
     depends_on:
       postgres-chats:
         condition: service_healthy
@@ -204,12 +113,13 @@ services:
     environment:
       RESULTS_CRUD_SERVER_HOST: "0.0.0.0"
       RESULTS_CRUD_SERVER_PORT: "8088"
-      RESULTS_CRUD_DATABASE_HOST: postgres-results
+      RESULTS_CRUD_DATABASE_HOST: postgres
       RESULTS_CRUD_DATABASE_PORT: "5432"
-      RESULTS_CRUD_DATABASE_USER: results_crud
-      RESULTS_CRUD_DATABASE_PASSWORD: results_crud_password
-      RESULTS_CRUD_DATABASE_NAME: results_crud_db
+      RESULTS_CRUD_DATABASE_USER: postgres
+      RESULTS_CRUD_DATABASE_PASSWORD: postgres
+      RESULTS_CRUD_DATABASE_NAME: postgres
       RESULTS_CRUD_DATABASE_SSL_MODE: disable
+      RESULTS_CRUD_DATABASE_SCHEMA: results_crud
     depends_on:
       postgres-results:
         condition: service_healthy
@@ -222,12 +132,13 @@ services:
     environment:
       KNOWLEDGE_BASE_CRUD_SERVER_HOST: "0.0.0.0"
       KNOWLEDGE_BASE_CRUD_SERVER_PORT: "8090"
-      KNOWLEDGE_BASE_CRUD_DATABASE_HOST: postgres-knowledge
+      KNOWLEDGE_BASE_CRUD_DATABASE_HOST: postgres
       KNOWLEDGE_BASE_CRUD_DATABASE_PORT: "5432"
-      KNOWLEDGE_BASE_CRUD_DATABASE_USER: knowledge_base_crud
-      KNOWLEDGE_BASE_CRUD_DATABASE_PASSWORD: knowledge_base_crud_password
-      KNOWLEDGE_BASE_CRUD_DATABASE_NAME: knowledge_base_crud_db
+      KNOWLEDGE_BASE_CRUD_DATABASE_USER: postgres
+      KNOWLEDGE_BASE_CRUD_DATABASE_PASSWORD: postgres
+      KNOWLEDGE_BASE_CRUD_DATABASE_NAME: postgres
       KNOWLEDGE_BASE_CRUD_DATABASE_SSL_MODE: disable
+      KNOWLEDGE_BASE_CRUD_DATABASE_SCHEMA: knowledge_base_crud
     depends_on:
       postgres-knowledge:
         condition: service_healthy
@@ -240,12 +151,13 @@ services:
     environment:
       QUESTIONS_CRUD_SERVER_HOST: "0.0.0.0"
       QUESTIONS_CRUD_SERVER_PORT: "8091"
-      QUESTIONS_CRUD_DATABASE_HOST: postgres-questions
+      QUESTIONS_CRUD_DATABASE_HOST: postgres
       QUESTIONS_CRUD_DATABASE_PORT: "5432"
-      QUESTIONS_CRUD_DATABASE_USER: questions_crud
-      QUESTIONS_CRUD_DATABASE_PASSWORD: questions_crud_password
-      QUESTIONS_CRUD_DATABASE_NAME: questions_crud_db
+      QUESTIONS_CRUD_DATABASE_USER: postgres
+      QUESTIONS_CRUD_DATABASE_PASSWORD: postgres
+      QUESTIONS_CRUD_DATABASE_NAME: postgres
       QUESTIONS_CRUD_DATABASE_SSL_MODE: disable
+      QUESTIONS_CRUD_DATABASE_SCHEMA: questions_crud
     depends_on:
       postgres-questions:
         condition: service_healthy
@@ -281,8 +193,8 @@ services:
       context: ./backend/interview-builder-service
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC_REQUEST: interview.build.request
-      KAFKA_TOPIC_RESPONSE: interview.build.response
+      KAFKA_TOPIC_REQUEST: team10-interview.build.request
+      KAFKA_TOPIC_RESPONSE: team10-interview.build.response
       KAFKA_CONSUMER_GROUP: interview-builder-service-group
       QUESTIONS_CRUD_URL: http://questions-crud-service:8091
       KNOWLEDGE_BASE_CRUD_URL: http://knowledge-base-crud-service:8090
@@ -312,8 +224,8 @@ services:
       SESSION_SESSION_CRUD_BASE_URL: http://session-crud-service:8085
       SESSION_SESSION_CRUD_TIMEOUT_SECONDS: "5"
       SESSION_KAFKA_BROKERS: kafka:9092
-      SESSION_KAFKA_TOPIC_REQUEST: interview.build.request
-      SESSION_KAFKA_TOPIC_RESPONSE: interview.build.response
+      SESSION_KAFKA_TOPIC_REQUEST: team10-interview.build.request
+      SESSION_KAFKA_TOPIC_RESPONSE: team10-interview.build.response
       SESSION_KAFKA_CONSUMER_GROUP: session-manager-service-group
       SESSION_SESSION_MANAGER_MAX_ACTIVE_SESSIONS: "100"
       SESSION_SESSION_MANAGER_PROGRAM_TIMEOUT_SECONDS: "30"
@@ -344,8 +256,8 @@ services:
       BFF_RESULTS_CRUD_BASE_URL: http://results-crud-service:8088
       BFF_RESULTS_CRUD_TIMEOUT_SECONDS: "5"
       BFF_KAFKA_BROKERS: kafka:9092
-      BFF_KAFKA_TOPIC_CHAT_OUT: chat.events.out
-      BFF_KAFKA_TOPIC_CHAT_IN: chat.events.in
+      BFF_KAFKA_TOPIC_CHAT_OUT: team10-chat.events.out
+      BFF_KAFKA_TOPIC_CHAT_IN: team10-chat.events.in
       BFF_KAFKA_CONSUMER_GROUP: bff-service-group
       BFF_CORS_ALLOW_ORIGINS: "*"
       BFF_CORS_ALLOW_HEADERS: Authorization,Content-Type
@@ -473,8 +385,8 @@ services:
       MOCK_MODEL_SERVER_HOST: "0.0.0.0"
       MOCK_MODEL_SERVER_PORT: "8084"
       MOCK_MODEL_KAFKA_BROKERS: kafka:9092
-      MOCK_MODEL_KAFKA_TOPIC_CHAT_OUT: chat.events.out
-      MOCK_MODEL_KAFKA_TOPIC_CHAT_IN: chat.events.in
+      MOCK_MODEL_KAFKA_TOPIC_CHAT_OUT: team10-chat.events.out
+      MOCK_MODEL_KAFKA_TOPIC_CHAT_IN: team10-chat.events.in
       MOCK_MODEL_KAFKA_CONSUMER_GROUP: mock-model-service-group
       MOCK_MODEL_MODEL_QUESTION_DELAY_SECONDS: "2"
       MOCK_MODEL_SESSION_MANAGER_BASE_URL: http://session-service:8083
@@ -495,66 +407,8 @@ services:
     ports:
       - "8084:8084"
 
-  dialogue-aggregator:
-    build:
-      context: ./backend/dialogue-aggregator
-    environment:
-      # Kafka
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_CONSUMER_GROUP_PUBLICATION: dialogue-aggregator-publication-group
-      KAFKA_CONSUMER_GROUP_MESSAGES: dialogue-aggregator-messages-group
-      KAFKA_CONSUMER_GROUP_GENERATED: dialogue-aggregator-generated-group
-      KAFKA_TOPIC_PUBLICATION: publication.events
-      KAFKA_TOPIC_MESSAGES: messages.events
-      KAFKA_TOPIC_GENERATED: generated.phrases
-      KAFKA_TOPIC_FULL_DATA: messages.full.data
-      KAFKA_TOPIC_HISTORY: history.full.events
-      KAFKA_TOPIC_DLQ: dialogue-aggregator.dlq
-      KAFKA_CONSUMER_AUTO_OFFSET_RESET: earliest
-      KAFKA_CONSUMER_ENABLE_AUTO_COMMIT: "false"
-      KAFKA_CONSUMER_MAX_POLL_RECORDS: 100
-      KAFKA_PRODUCER_ACKS: all
-      KAFKA_PRODUCER_RETRIES: 3
-      KAFKA_PRODUCER_COMPRESSION_TYPE: snappy
-      # Redis
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: 0
-      REDIS_PASSWORD: ""
-      REDIS_MAX_CONNECTIONS: 50
-      REDIS_DIALOGUE_TTL_SECONDS: 86400
-      REDIS_MESSAGES_CACHE_SIZE: 50
-      # Service
-      SERVICE_NAME: dialogue-aggregator
-      SERVICE_VERSION: 1.0.0
-      LOG_LEVEL: INFO
-      LOG_FORMAT: json
-      MAX_MESSAGES_CACHE_SIZE: 50
-      # Metrics
-      METRICS_PORT: 9091
-      ENABLE_PROMETHEUS: "true"
-    depends_on:
-      kafka:
-        condition: service_started
-      redis:
-        condition: service_healthy
-    ports:
-      - "8086:8085"  # FastAPI app
-      - "9091:9091"  # Metrics
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
 volumes:
   postgres_data:
-  postgres_sessions_data:
-  postgres_chats_data:
-  postgres_results_data:
-  postgres_knowledge_data:
-  postgres_questions_data:
-  redis_data:
   redis_sessions_data:
   prometheus_data:
   grafana_data:
