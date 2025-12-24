@@ -27,12 +27,13 @@ type DatabaseConfig struct {
 	Password string `mapstructure:"password"`
 	Name     string `mapstructure:"name"`
 	SSLMode  string `mapstructure:"ssl_mode"`
+	Schema   string `mapstructure:"schema"` // PostgreSQL schema name
 }
 
 // DSN строит строку подключения к PostgreSQL в формате, совместимом с GORM/pgx.
-// Включает хост, порт, имя пользователя, пароль, имя базы и режим SSL.
+// Включает хост, порт, имя пользователя, пароль, имя базы, режим SSL и search_path для схемы.
 func (c DatabaseConfig) DSN() string {
-	return fmt.Sprintf(
+	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		c.Host,
 		c.Port,
@@ -41,6 +42,10 @@ func (c DatabaseConfig) DSN() string {
 		c.Name,
 		c.SSLMode,
 	)
+	if c.Schema != "" {
+		dsn += fmt.Sprintf(" search_path=%s", c.Schema)
+	}
+	return dsn
 }
 
 // Load читает конфигурацию из файла и переменных окружения.

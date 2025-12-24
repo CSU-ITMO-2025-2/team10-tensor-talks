@@ -4,9 +4,9 @@ server:
 
 kafka:
   brokers: "kafka:9092"
-  topic_chat_out: "chat.events.out"
-  topic_chat_in: "chat.events.in"
-  consumer_group: "mock-model-service-group"
+  topic_chat_out: "team10-chat.events.out"  # Prefixed for Kubernetes shared cluster
+  topic_chat_in: "team10-chat.events.in"    # Prefixed for Kubernetes shared cluster
+  consumer_group: "team10-mock-model-service-group"  # Prefixed for Kubernetes shared cluster
 
 model:
   question_delay_seconds: 2

@@ -27,6 +27,7 @@ type DatabaseConfig struct {
 	Password string `mapstructure:"password"`
 	Name     string `mapstructure:"name"`
 	SSLMode  string `mapstructure:"ssl_mode"`
+	Schema   string `mapstructure:"schema"` // PostgreSQL schema name
 }
 
 // Load загружает конфигурацию из файла и переменных окружения.
@@ -55,6 +56,10 @@ func Load() (Config, error) {
 
 // DSN возвращает строку подключения к PostgreSQL.
 func (c DatabaseConfig) DSN() string {
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode)
+	if c.Schema != "" {
+		dsn += fmt.Sprintf(" search_path=%s", c.Schema)
+	}
+	return dsn
 }

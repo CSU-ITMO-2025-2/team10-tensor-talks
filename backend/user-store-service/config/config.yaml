@@ -9,4 +9,5 @@ database:
   password: "user_store_password"
   name: "user_store_db"
   ssl_mode: "disable"
+  schema: ""  # Empty for local dev (separate DB), set to "user_store" for Kubernetes
 

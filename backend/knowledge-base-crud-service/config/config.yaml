@@ -9,4 +9,5 @@ database:
   password: ""
   name: "knowledge_base_crud_db"
   ssl_mode: "disable"
+  schema: ""  # Empty for local dev (separate DB), set to "knowledge_base_crud" for Kubernetes
 

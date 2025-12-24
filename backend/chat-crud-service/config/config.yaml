@@ -9,3 +9,4 @@ database:
   password: ""
   name: "chat_crud_db"
   ssl_mode: "disable"
+  schema: ""  # Empty for local dev (separate DB), set to "chat_crud" for Kubernetes

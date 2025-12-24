@@ -14,7 +14,7 @@ jwt:
   secret: "changeme-in-prod"
 
 redis:
-  addr: "redis:6379"
+  addr: "redis-sessions:6379"  # Using redis-sessions instead of redis
   password: ""
   db: 0
 

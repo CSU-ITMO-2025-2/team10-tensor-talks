@@ -9,3 +9,4 @@ database:
   password: ""
   name: "results_crud_db"
   ssl_mode: "disable"
+  schema: ""  # Empty for local dev (separate DB), set to "results_crud" for Kubernetes
