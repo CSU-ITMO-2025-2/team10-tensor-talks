@@ -19,13 +19,13 @@ class Settings(BaseSettings):
         default="localhost:9092", alias="KAFKA_BOOTSTRAP_SERVERS"
     )
     kafka_topic_request: str = Field(
-        default="interview.build.request", alias="KAFKA_TOPIC_REQUEST"
+        default="team10-interview.build.request", alias="KAFKA_TOPIC_REQUEST"  # Prefixed for Kubernetes shared cluster
     )
     kafka_topic_response: str = Field(
-        default="interview.build.response", alias="KAFKA_TOPIC_RESPONSE"
+        default="team10-interview.build.response", alias="KAFKA_TOPIC_RESPONSE"  # Prefixed for Kubernetes shared cluster
     )
     kafka_consumer_group: str = Field(
-        default="interview-builder-service-group", alias="KAFKA_CONSUMER_GROUP"
+        default="team10-interview-builder-service-group", alias="KAFKA_CONSUMER_GROUP"  # Prefixed for Kubernetes shared cluster
     )
 
     # Questions CRUD Service
