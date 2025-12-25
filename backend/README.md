@@ -79,15 +79,7 @@
    - Сохраняет результаты интервью в `results-crud-service`.
    - Закрывает сессии через `session-service` при завершении интервью.
 
-12. **dialogue-aggregator**
-   - Python FastAPI сервис для агрегации диалогов и управления их состоянием.
-   - Агрегирует диалоги из событий Kafka (`publication.events`, `messages.events`, `generated.phrases`).
-   - Управляет состоянием диалогов в Redis (KV-хранилище).
-   - Обогащает сообщения метаданными и ролями (user/assistant/system).
-   - Выполняет fan-out событий в различные Kafka-топики (`messages.full.data`, `history.full.events`).
-   - Stateless обработка, stateful хранилище (Redis), at-least-once delivery гарантии.
-
-13. **bff-service**
+12. **bff-service**
    - **Backend-for-frontend**, предоставляющий фронтенду стабильное REST API.
    - Проксирует запросы аутентификации в `auth-service`, скрывая внутреннюю топологию сервисов.
    - Управляет чатами: создаёт сессии через `session-service`, отправляет события в Kafka.
@@ -186,11 +178,6 @@
 - **chat.events.in** — события от модели к BFF (вопрос от модели, результаты, окончание чата)
 - **interview.build.request** — запрос на создание программы интервью (session-manager → interview-builder)
 - **interview.build.response** — ответ с программой интервью (interview-builder → session-manager)
-- **publication.events** — команды для запуска процессов (dialogue.started, user.message.new)
-- **messages.events** — события сообщений для восстановления состояния
-- **generated.phrases** — сгенерированные ответы от Agent Service
-- **messages.full.data** — полные сообщения с метаданными для LLM-агента
-- **history.full.events** — immutable event store для истории диалогов
 
 Подробнее см. [KAFKA.md](./KAFKA.md)
 
@@ -211,7 +198,6 @@
   - `QUESTIONS_CRUD_...` для `questions-crud-service`;
   - `KNOWLEDGE_PRODUCER_...` для `knowledge-producer-service`;
   - `MOCK_MODEL_...` для `mock-model-service`;
-  - `KAFKA_...`, `REDIS_...`, `SERVICE_...` для `dialogue-aggregator` (Python Pydantic Settings);
   - `BFF_...` для `bff-service`.
 
 Секреты (JWT-secret, пароли БД и т.п.) в проде должны передаваться только через переменные окружения
@@ -233,7 +219,6 @@
   - `questions-crud-service` — CRUD для базы вопросов;
   - `knowledge-producer-service` — заполнение баз знаний и вопросов из JSON файлов (Python FastAPI);
   - `mock-model-service` — заглушка AI-модели для обработки чатов;
-  - `dialogue-aggregator` — агрегация диалогов и управление состоянием (Python FastAPI);
   - `user-store-service` — CRUD над таблицей пользователей;
   - PostgreSQL (несколько БД: user_store_db, session_crud_db, chat_crud_db, results_crud_db, knowledge_base_crud_db, questions_crud_db);
   - Redis — кэширование активных сессий;
@@ -313,7 +298,6 @@
 - `interview-builder-service` создаёт программу интервью через Kafka очереди (`interview.build.request/response`), запрашивая вопросы и знания из соответствующих CRUD сервисов;
 - `bff-service` управляет чатами через `session-service`, получает историю из `chat-crud-service` и результаты из `results-crud-service`;
 - `mock-model-service` (будущий `marking-service`) обрабатывает события чатов, получает программу интервью от session-manager, сохраняет сообщения в `chat-crud-service` и результаты в `results-crud-service`;
-- `dialogue-aggregator` агрегирует диалоги из событий Kafka, управляет состоянием в Redis и выполняет fan-out событий в различные топики;
 - все сервисы конфигурируются через Viper (Go) или Pydantic Settings (Python) и запускаются в отдельных контейнерах.
 
 ### Мониторинг и логирование
@@ -357,7 +341,6 @@
 - `questions-crud-service`
 - `knowledge-producer-service`
 - `mock-model-service`
-- `dialogue-aggregator`
 
 Дополнительная документация:
 - [CHAT_IMPLEMENTATION.md](./CHAT_IMPLEMENTATION.md) — реализация логики чатов и управления сессиями

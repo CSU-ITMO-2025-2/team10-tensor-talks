@@ -1,0 +1,32 @@
+{{- if .Values.services.frontend.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tensor-talks.fullname" . }}-frontend-nginx
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "tensor-talks.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+data:
+  nginx.conf: |
+    server {
+        listen 80;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        location /api/ {
+            proxy_pass http://{{ include "tensor-talks.fullname" . }}-bff-service:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
+{{- end }}
+

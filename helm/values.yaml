@@ -1,0 +1,320 @@
+# Значения по умолчанию для tensor-talks
+# Это YAML-форматированный файл.
+
+# Глобальные настройки
+global:
+  namespace: team10-ns
+  imageRegistry: ghcr.io
+  imagePullSecrets:
+    - name: ghcr-secret
+  # Метки для изоляции в общем мониторинге
+  labels:
+    team: team10
+    project: tensor-talks
+
+# Конфигурация PostgreSQL (общая база данных)
+postgresql:
+  host: 79.174.89.43
+  port: 18809
+  database: team10_db
+  user: team10
+  password: Mc5kQpR9@t2Wx7nS
+  sslMode: require
+
+# Конфигурация Kafka (общий кластер)
+# Используем общий кластер, необходимо минимизировать нагрузку
+kafka:
+  bootstrapServers: my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+  topicPrefix: team10-
+  topics:
+    enabled: true  # Создавать KafkaTopic манифесты для безопасного управления
+    partitions: 3
+    replicas: 3
+    # Ограничения для предотвращения засорения общего кластера
+    retentionDays: 3  # Хранение сообщений только 3 дня
+    maxMessageSize: 1048576  # 1MB максимум на сообщение
+    compression: snappy  # Сжатие для экономии места
+  # Ограничения для producer/consumer
+  producer:
+    batchSize: 16384  # 16KB батчи для эффективности
+    lingerMs: 10  # Небольшая задержка для батчинга
+    compressionType: snappy
+  consumer:
+    maxPollRecords: 100  # Максимум 100 сообщений за раз
+    fetchMinBytes: 1024  # Минимум 1KB для эффективности
+
+# Конфигурация Redis (развертывается в namespace)
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-alpine
+  service:
+    port: 6379
+  persistence:
+    enabled: false  # Установить в true для продакшена с PVC
+
+# Конфигурация логирования (ограничения для общего Loki)
+logging:
+  enabled: true
+  level: INFO  # Только INFO и выше, без DEBUG
+  rateLimit: 100  # Максимум 100 логов в секунду на сервис
+  maxSize: 1024  # Максимум 1KB на одно лог-сообщение
+
+# Конфигурации сервисов
+services:
+  auth-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-auth-service
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    jwt:
+      secret: changeme-in-prod  # Должен быть в Secret
+      issuer: tensor-talks-auth
+      audience: tensor-talks-services
+      accessTokenTTL: 15m
+      refreshTokenTTL: 720h
+
+  user-store-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-user-store-service
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    database:
+      schema: user_store
+
+  bff-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-bff-service
+      tag: latest
+    replicaCount: 1
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+    resources:
+      limits:
+        cpu: 300m
+        memory: 512Mi
+      requests:
+        cpu: 150m
+        memory: 256Mi
+
+  session-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-session-service
+      tag: latest
+    replicaCount: 1
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 80
+    resources:
+      limits:
+        cpu: 300m
+        memory: 512Mi
+      requests:
+        cpu: 150m
+        memory: 256Mi
+
+  session-crud-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-session-crud-service
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    database:
+      schema: session_crud
+
+  chat-crud-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-chat-crud-service
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    database:
+      schema: chat_crud
+
+  results-crud-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-results-crud-service
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    database:
+      schema: results_crud
+
+  knowledge-base-crud-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-knowledge-base-crud-service
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    database:
+      schema: knowledge_base_crud
+
+  questions-crud-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-questions-crud-service
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    database:
+      schema: questions_crud
+
+  interview-builder-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-interview-builder-service
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 300m
+        memory: 512Mi
+      requests:
+        cpu: 150m
+        memory: 256Mi
+
+  knowledge-producer-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-knowledge-producer-service
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  mock-model-service:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-mock-model-service
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 300m
+        memory: 512Mi
+      requests:
+        cpu: 150m
+        memory: 256Mi
+
+  frontend:
+    enabled: true
+    image:
+      repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-frontend
+      tag: latest
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+# Конфигурация Ingress
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: tensor-talks-team10.kubepractice.ru
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - tensor-talks-team10.kubepractice.ru
+      secretName: tls-secret
+
+# ServiceMonitor для Prometheus
+# ВНИМАНИЕ: Требуются права на создание ресурсов в namespace 'monitoring'
+# Если прав нет, установите enabled: false и попросите администратора создать ServiceMonitor вручную
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+  interval: 60s  # Увеличено до 60s для снижения нагрузки на общий Prometheus
+  scrapeTimeout: 10s
+  # Ограничения для предотвращения засорения общих систем
+  maxMetrics: 100  # Максимум метрик на сервис (через metricRelabelings)
+
+# ServiceAccount
+serviceAccount:
+  create: true
+  annotations: {}
+
+# Контекст безопасности Pod
+podSecurityContext:
+  fsGroup: 2000
+
+# Контекст безопасности
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+

@@ -148,6 +148,17 @@ docker-compose.local.yml
 Desktop.ini
 $RECYCLE.BIN/
 
+# Вспомогательные файлы
+COMMITS.md
+
+# Примеры (не коммитить)
+ingress.yaml
+kafka-kraft.yaml
+service_monitor.yaml
+prometheus.yml
+promtail-config.yml
+team10-kubeconfig.yaml
+
 # Linux дополнительные
 .directory
 

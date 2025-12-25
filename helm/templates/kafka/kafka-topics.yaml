@@ -1,0 +1,85 @@
+{{- if .Values.kafka.topics.enabled }}
+# KafkaTopic манифесты для безопасного создания топиков в общем кластере
+# Все топики имеют префикс team10- для изоляции
+
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: team10-chat.events.out
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: my-cluster
+    team: team10
+    project: tensor-talks
+spec:
+  partitions: {{ .Values.kafka.topics.partitions | default 3 }}
+  replicas: {{ .Values.kafka.topics.replicas | default 3 }}
+  config:
+    retention.ms: 259200000  # 3 дня (сокращено для экономии места в общем кластере)
+    cleanup.policy: delete
+    max.message.bytes: 1048576  # 1MB максимум на сообщение
+    compression.type: snappy  # Сжатие для экономии места
+    segment.ms: 3600000  # 1 час - более агрессивная очистка
+
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: team10-chat.events.in
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: my-cluster
+    team: team10
+    project: tensor-talks
+spec:
+  partitions: {{ .Values.kafka.topics.partitions | default 3 }}
+  replicas: {{ .Values.kafka.topics.replicas | default 3 }}
+  config:
+    retention.ms: 259200000  # 3 дня (сокращено для экономии места в общем кластере)
+    cleanup.policy: delete
+    max.message.bytes: 1048576  # 1MB максимум на сообщение
+    compression.type: snappy  # Сжатие для экономии места
+    segment.ms: 3600000  # 1 час - более агрессивная очистка
+
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: team10-interview.build.request
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: my-cluster
+    team: team10
+    project: tensor-talks
+spec:
+  partitions: {{ .Values.kafka.topics.partitions | default 3 }}
+  replicas: {{ .Values.kafka.topics.replicas | default 3 }}
+  config:
+    retention.ms: 259200000  # 3 дня (сокращено для экономии места в общем кластере)
+    cleanup.policy: delete
+    max.message.bytes: 1048576  # 1MB максимум на сообщение
+    compression.type: snappy  # Сжатие для экономии места
+    segment.ms: 3600000  # 1 час - более агрессивная очистка
+
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: team10-interview.build.response
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: my-cluster
+    team: team10
+    project: tensor-talks
+spec:
+  partitions: {{ .Values.kafka.topics.partitions | default 3 }}
+  replicas: {{ .Values.kafka.topics.replicas | default 3 }}
+  config:
+    retention.ms: 259200000  # 3 дня (сокращено для экономии места в общем кластере)
+    cleanup.policy: delete
+    max.message.bytes: 1048576  # 1MB максимум на сообщение
+    compression.type: snappy  # Сжатие для экономии места
+    segment.ms: 3600000  # 1 час - более агрессивная очистка
+{{- end }}
+
