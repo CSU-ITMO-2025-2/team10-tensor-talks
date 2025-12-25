@@ -1,0 +1,112 @@
+name: Сборка и публикация Docker образов
+
+# ВНИМАНИЕ: Публикация отключена во время разработки
+# Чтобы включить публикацию, установите ENABLE_PUSH: true
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Позволяет запускать вручную
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/tensor-talks
+  # Отключить публикацию во время разработки
+  # Установите в true, когда будете готовы публиковать образы
+  ENABLE_PUSH: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service:
+          - auth-service
+          - bff-service
+          - user-store-service
+          - session-service
+          - session-crud-service
+          - chat-crud-service
+          - results-crud-service
+          - knowledge-base-crud-service
+          - questions-crud-service
+          - interview-builder-service
+          - knowledge-producer-service
+          - mock-model-service
+          - frontend
+
+    steps:
+      - name: Клонирование кода
+        uses: actions/checkout@v4
+
+      - name: Настройка Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Вход в GitHub Container Registry
+        if: env.ENABLE_PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Извлечение метаданных
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Сборка Docker образа (без публикации)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/${{ matrix.service }}
+          file: ./backend/${{ matrix.service }}/Dockerfile
+          # Публикация отключена: push: false
+          # Включить публикацию: измените ENABLE_PUSH на true в env выше
+          push: ${{ env.ENABLE_PUSH == 'true' && github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Информация о сборке
+        if: env.ENABLE_PUSH != 'true'
+        run: |
+          echo "✅ Образ ${{ matrix.service }} успешно собран (без публикации)"
+          echo "📦 Для публикации установите ENABLE_PUSH: true в env"
+
+      - name: Сборка frontend (без публикации)
+        if: matrix.service == 'frontend'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          # Публикация отключена: push: false
+          # Включить публикацию: измените ENABLE_PUSH на true в env выше
+          push: ${{ env.ENABLE_PUSH == 'true' && github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Информация о сборке frontend
+        if: matrix.service == 'frontend' && env.ENABLE_PUSH != 'true'
+        run: |
+          echo "✅ Образ frontend успешно собран (без публикации)"
+          echo "📦 Для публикации установите ENABLE_PUSH: true в env"
+
