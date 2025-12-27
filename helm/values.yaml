@@ -71,11 +71,11 @@ services:
     replicaCount: 1
     resources:
       limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
         cpu: 100m
         memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
     jwt:
       secret: changeme-in-prod  # Должен быть в Secret
       issuer: tensor-talks-auth
@@ -91,11 +91,11 @@ services:
     replicaCount: 1
     resources:
       limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
         cpu: 100m
         memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
     database:
       schema: user_store
 
@@ -108,15 +108,15 @@ services:
     autoscaling:
       enabled: true
       minReplicas: 1
-      maxReplicas: 3
+      maxReplicas: 2
       targetCPUUtilizationPercentage: 80
     resources:
       limits:
-        cpu: 300m
-        memory: 512Mi
-      requests:
         cpu: 150m
-        memory: 256Mi
+        memory: 384Mi
+      requests:
+        cpu: 75m
+        memory: 192Mi
 
   session-service:
     enabled: true
@@ -127,15 +127,15 @@ services:
     autoscaling:
       enabled: true
       minReplicas: 1
-      maxReplicas: 3
+      maxReplicas: 2
       targetCPUUtilizationPercentage: 80
     resources:
       limits:
-        cpu: 300m
-        memory: 512Mi
-      requests:
         cpu: 150m
-        memory: 256Mi
+        memory: 384Mi
+      requests:
+        cpu: 75m
+        memory: 192Mi
 
   session-crud-service:
     enabled: true
@@ -145,11 +145,11 @@ services:
     replicaCount: 1
     resources:
       limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
         cpu: 100m
         memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
     database:
       schema: session_crud
 
@@ -161,11 +161,11 @@ services:
     replicaCount: 1
     resources:
       limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
         cpu: 100m
         memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
     database:
       schema: chat_crud
 
@@ -177,11 +177,11 @@ services:
     replicaCount: 1
     resources:
       limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
         cpu: 100m
         memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
     database:
       schema: results_crud
 
@@ -193,11 +193,11 @@ services:
     replicaCount: 1
     resources:
       limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
         cpu: 100m
         memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
     database:
       schema: knowledge_base_crud
 
@@ -209,11 +209,11 @@ services:
     replicaCount: 1
     resources:
       limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
         cpu: 100m
         memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
     database:
       schema: questions_crud
 
@@ -223,13 +223,18 @@ services:
       repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-interview-builder-service
       tag: latest
     replicaCount: 1
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 2
+      targetCPUUtilizationPercentage: 80
     resources:
       limits:
-        cpu: 300m
-        memory: 512Mi
-      requests:
         cpu: 150m
-        memory: 256Mi
+        memory: 384Mi
+      requests:
+        cpu: 75m
+        memory: 192Mi
 
   knowledge-producer-service:
     enabled: true
@@ -239,11 +244,11 @@ services:
     replicaCount: 1
     resources:
       limits:
-        cpu: 200m
-        memory: 256Mi
-      requests:
         cpu: 100m
         memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
 
   mock-model-service:
     enabled: true
@@ -251,13 +256,18 @@ services:
       repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-mock-model-service
       tag: latest
     replicaCount: 1
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 2
+      targetCPUUtilizationPercentage: 80
     resources:
       limits:
-        cpu: 300m
-        memory: 512Mi
-      requests:
         cpu: 150m
-        memory: 256Mi
+        memory: 384Mi
+      requests:
+        cpu: 75m
+        memory: 192Mi
 
   frontend:
     enabled: true
@@ -267,10 +277,10 @@ services:
     replicaCount: 1
     resources:
       limits:
-        cpu: 100m
+        cpu: 50m
         memory: 128Mi
       requests:
-        cpu: 50m
+        cpu: 25m
         memory: 64Mi
 
 # Конфигурация Ingress
