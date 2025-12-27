@@ -142,16 +142,12 @@ TensorTalks помогает ML-специалистам и компаниям �
   Кэширование активных сессий для быстрого доступа к программам интервью.
 
 - **Kafka**  
-  Очереди для асинхронной обработки событий:
-  - `chat.events.out` — события от BFF к модели (старт чата, сообщения пользователя);
-  - `chat.events.in` — события от модели к BFF (вопросы, результаты, завершение);
-  - `interview.build.request` — запрос на создание программы интервью;
-  - `interview.build.response` — ответ с готовой программой интервью;
-  - `publication.events` — команды для запуска процессов (dialogue.started, user.message.new);
-  - `messages.events` — события сообщений для восстановления состояния;
-  - `generated.phrases` — сгенерированные ответы от Agent Service;
-  - `messages.full.data` — полные сообщения с метаданными для LLM-агента;
-  - `history.full.events` — immutable event store для истории диалогов.
+  Очереди для асинхронной обработки событий. Развертывается через Strimzi Operator в namespace `team10-ns`:
+  - `team10-chat.events.out` — события от BFF к модели (старт чата, сообщения пользователя);
+  - `team10-chat.events.in` — события от модели к BFF (вопросы, результаты, завершение);
+  - `team10-interview.build.request` — запрос на создание программы интервью;
+  - `team10-interview.build.response` — ответ с готовой программой интервью;
+  - Kafka UI (Kafdrop) доступен для мониторинга топиков и сообщений.
 
 ### Стек backend
 
@@ -162,9 +158,11 @@ TensorTalks помогает ML-специалистам и компаниям �
 - Логирование: **Zap** (Go), **structlog** (Python)
 - Тестирование: **Testify** (Go)
 - БД: **PostgreSQL** (JSONB для гибких схем)
-- Очереди: **Kafka** (с Zookeeper)
-- Мониторинг: **Prometheus**, **Grafana**, **Loki**
+- Очереди: **Kafka** (через Strimzi Operator, KRaft режим без Zookeeper)
+- Мониторинг: **Prometheus**, **Grafana** (развертываются в namespace), **Kafdrop** (Kafka UI)
+- Секреты: **Vault** (через External Secrets Operator)
 - Контейнеризация: **Docker**, `docker-compose`
+- Оркестрация: **Kubernetes**, **Helm**
 
 Подробные схемы и описание каждого микросервиса см. в `backend/README.md`
 и в отдельных `README.md` внутри `backend/auth-service`, `backend/user-store-service`,
@@ -226,7 +224,9 @@ frontend/
 - [x] MVP логика чатов (создание сессий, отправка сообщений)
 - [x] Интеграция с Kafka для асинхронной обработки событий
 - [x] Mock AI-модель для обработки чатов
-- [x] Мониторинг (Prometheus, Grafana, Loki)
+- [x] Мониторинг (Prometheus, Grafana, Kafdrop) - развертывается в namespace
+- [x] Собственный Kafka кластер через Strimzi Operator
+- [x] Интеграция с Vault для управления секретами
 - [x] Логирование и метрики во всех микросервисах
 - [x] Хранение истории чатов и сессий (CRUD сервисы для чатов, результатов и сессий)
 - [x] Управление сессиями с Redis кэшированием

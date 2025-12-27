@@ -1,5 +1,5 @@
 {{- if .Values.kafka.topics.enabled }}
-# KafkaTopic манифесты для безопасного создания топиков в общем кластере
+# KafkaTopic манифесты для создания топиков в нашем кластере team10-kafka
 # Все топики имеют префикс team10- для изоляции
 
 ---
@@ -7,16 +7,15 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: team10-chat.events.out
-  namespace: kafka
+  namespace: {{ .Values.global.namespace }}
   labels:
-    strimzi.io/cluster: my-cluster
-    team: team10
-    project: tensor-talks
+    {{- include "tensor-talks.labels" . | nindent 4 }}
+    strimzi.io/cluster: team10-kafka
 spec:
   partitions: {{ .Values.kafka.topics.partitions | default 3 }}
-  replicas: {{ .Values.kafka.topics.replicas | default 3 }}
+  replicas: {{ .Values.kafka.broker.replicas | default 1 }}
   config:
-    retention.ms: 259200000  # 3 дня (сокращено для экономии места в общем кластере)
+    retention.ms: {{ mul .Values.kafka.topics.retentionDays 86400000 | default 259200000 }}  # По умолчанию 3 дня
     cleanup.policy: delete
     max.message.bytes: 1048576  # 1MB максимум на сообщение
     compression.type: snappy  # Сжатие для экономии места
@@ -27,16 +26,15 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: team10-chat.events.in
-  namespace: kafka
+  namespace: {{ .Values.global.namespace }}
   labels:
-    strimzi.io/cluster: my-cluster
-    team: team10
-    project: tensor-talks
+    {{- include "tensor-talks.labels" . | nindent 4 }}
+    strimzi.io/cluster: team10-kafka
 spec:
   partitions: {{ .Values.kafka.topics.partitions | default 3 }}
-  replicas: {{ .Values.kafka.topics.replicas | default 3 }}
+  replicas: {{ .Values.kafka.broker.replicas | default 1 }}
   config:
-    retention.ms: 259200000  # 3 дня (сокращено для экономии места в общем кластере)
+    retention.ms: {{ mul .Values.kafka.topics.retentionDays 86400000 | default 259200000 }}  # По умолчанию 3 дня
     cleanup.policy: delete
     max.message.bytes: 1048576  # 1MB максимум на сообщение
     compression.type: snappy  # Сжатие для экономии места
@@ -47,16 +45,15 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: team10-interview.build.request
-  namespace: kafka
+  namespace: {{ .Values.global.namespace }}
   labels:
-    strimzi.io/cluster: my-cluster
-    team: team10
-    project: tensor-talks
+    {{- include "tensor-talks.labels" . | nindent 4 }}
+    strimzi.io/cluster: team10-kafka
 spec:
   partitions: {{ .Values.kafka.topics.partitions | default 3 }}
-  replicas: {{ .Values.kafka.topics.replicas | default 3 }}
+  replicas: {{ .Values.kafka.broker.replicas | default 1 }}
   config:
-    retention.ms: 259200000  # 3 дня (сокращено для экономии места в общем кластере)
+    retention.ms: {{ mul .Values.kafka.topics.retentionDays 86400000 | default 259200000 }}  # По умолчанию 3 дня
     cleanup.policy: delete
     max.message.bytes: 1048576  # 1MB максимум на сообщение
     compression.type: snappy  # Сжатие для экономии места
@@ -67,16 +64,15 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: team10-interview.build.response
-  namespace: kafka
+  namespace: {{ .Values.global.namespace }}
   labels:
-    strimzi.io/cluster: my-cluster
-    team: team10
-    project: tensor-talks
+    {{- include "tensor-talks.labels" . | nindent 4 }}
+    strimzi.io/cluster: team10-kafka
 spec:
   partitions: {{ .Values.kafka.topics.partitions | default 3 }}
-  replicas: {{ .Values.kafka.topics.replicas | default 3 }}
+  replicas: {{ .Values.kafka.broker.replicas | default 1 }}
   config:
-    retention.ms: 259200000  # 3 дня (сокращено для экономии места в общем кластере)
+    retention.ms: {{ mul .Values.kafka.topics.retentionDays 86400000 | default 259200000 }}  # По умолчанию 3 дня
     cleanup.policy: delete
     max.message.bytes: 1048576  # 1MB максимум на сообщение
     compression.type: snappy  # Сжатие для экономии места

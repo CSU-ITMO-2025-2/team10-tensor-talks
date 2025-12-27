@@ -564,7 +564,44 @@ consumer.RegisterHandler("user.registered", func(ctx context.Context, event Even
 
 ## Конфигурация Kafka
 
-### Docker Compose
+### Развертывание в Kubernetes через Strimzi
+
+Kafka развертывается в namespace `team10-ns` через Strimzi Operator с использованием KRaft режима (без Zookeeper).
+
+#### Установка Strimzi Operator
+
+```bash
+kubectl create -f 'https://strimzi.io/install/latest?namespace=team10-ns' -n team10-ns
+```
+
+#### Развертывание Kafka кластера
+
+Kafka кластер развертывается автоматически при установке Helm чарта:
+
+```bash
+helm install tensor-talks ./helm --namespace team10-ns --create-namespace
+```
+
+Кластер создается с именем `team10-kafka` в namespace `team10-ns`.
+
+#### Bootstrap Server
+
+После развертывания Kafka доступен по адресу:
+```
+team10-kafka-bootstrap.team10-ns.svc.cluster.local:9092
+```
+
+#### Kafka UI (Kafdrop)
+
+Kafdrop развертывается автоматически для мониторинга Kafka. Доступ через port-forward:
+
+```bash
+kubectl port-forward -n team10-ns svc/tensor-talks-kafdrop 9000:9000
+```
+
+Затем откройте в браузере: http://localhost:9000
+
+### Docker Compose (для локальной разработки)
 
 ```yaml
 kafka:

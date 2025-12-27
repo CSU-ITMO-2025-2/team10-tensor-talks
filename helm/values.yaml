@@ -14,23 +14,56 @@ global:
 
 # Конфигурация PostgreSQL (общая база данных)
 postgresql:
-  host: 79.174.89.43
-  port: 18809
-  database: team10_db
-  user: team10
-  password: Mc5kQpR9@t2Wx7nS
-  sslMode: require
+  # ВАЖНО: Если vault.enabled = true, все значения берутся из Vault через External Secrets
+  # Эти значения используются только если vault.enabled = false (не рекомендуется для продакшена)
+  # Значения из Vault: team10/postgresql (host, port, database, user, password, sslmode)
+  host: ""  # Берется из Vault если vault.enabled = true
+  port: 5432  # Берется из Vault если vault.enabled = true
+  database: team10_db  # Берется из Vault если vault.enabled = true
+  user: team10  # Берется из Vault если vault.enabled = true
+  password: ""  # Берется из Vault если vault.enabled = true
+  sslMode: require  # Берется из Vault если vault.enabled = true
 
-# Конфигурация Kafka (общий кластер)
-# Используем общий кластер, необходимо минимизировать нагрузку
+# Конфигурация Kafka (собственный кластер в namespace)
 kafka:
-  bootstrapServers: my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+  # Развертывание собственного Kafka кластера через Strimzi
+  deployment:
+    enabled: true
+  # Bootstrap server для подключения сервисов
+  bootstrapServers: team10-kafka-bootstrap.team10-ns.svc.cluster.local:9092
+  # Версия Kafka
+  version: 4.1.1
+  metadataVersion: 4.1-IV1
+  # Конфигурация Node Pools
+  controller:
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+  broker:
+    replicas: 1  # Минимальная конфигурация для тестового окружения
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 1
+        memory: 2Gi
+  # Хранилище
+  storage:
+    size: 5Gi
+    class: standard
+  # Конфигурация Kafka
+  config:
+    retentionHours: 72  # 3 дня
+  # Топики
   topicPrefix: team10-
   topics:
-    enabled: true  # Создавать KafkaTopic манифесты для безопасного управления
+    enabled: true  # Создавать KafkaTopic манифесты
     partitions: 3
-    replicas: 3
-    # Ограничения для предотвращения засорения общего кластера
     retentionDays: 3  # Хранение сообщений только 3 дня
     maxMessageSize: 1048576  # 1MB максимум на сообщение
     compression: snappy  # Сжатие для экономии места
@@ -42,6 +75,36 @@ kafka:
   consumer:
     maxPollRecords: 100  # Максимум 100 сообщений за раз
     fetchMinBytes: 1024  # Минимум 1KB для эффективности
+  # Kafka UI (Kafdrop)
+  ui:
+    enabled: true
+    image:
+      repository: obsidiandynamics/kafdrop
+      tag: latest
+      pullPolicy: IfNotPresent
+    port: 9000
+    jvmOpts: "-Xms32M -Xmx64M"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    ingress:
+      enabled: false  # Использовать port-forward для localhost
+      className: nginx
+      annotations:
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      hosts:
+        - host: kafdrop-team10.kubepractice.ru
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - hosts:
+            - kafdrop-team10.kubepractice.ru
+          secretName: tls-secret
 
 # Конфигурация Redis (развертывается в namespace)
 redis:
@@ -61,6 +124,83 @@ logging:
   rateLimit: 100  # Максимум 100 логов в секунду на сервис
   maxSize: 1024  # Максимум 1KB на одно лог-сообщение
 
+# Конфигурация мониторинга (Prometheus и Grafana)
+monitoring:
+  prometheus:
+    enabled: true
+    image:
+      repository: prom/prometheus
+      tag: latest
+      pullPolicy: IfNotPresent
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 15d
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    persistence:
+      enabled: false  # Установить в true для продакшена
+      size: 10Gi
+      storageClass: ""
+  grafana:
+    enabled: true
+    image:
+      repository: grafana/grafana
+      tag: latest
+      pullPolicy: IfNotPresent
+    # Значения из Vault: team10/grafana (admin-user, admin-password)
+    adminUser: admin  # Берется из Vault если vault.enabled = true
+    adminPassword: ""  # Берется из Vault если vault.enabled = true
+    plugins: ""  # Список плагинов через запятую
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 200m
+        memory: 512Mi
+    persistence:
+      enabled: false  # Установить в true для продакшена
+      size: 5Gi
+      storageClass: ""
+    ingress:
+      enabled: false  # Использовать port-forward для localhost
+      className: nginx
+      annotations:
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      hosts:
+        - host: grafana-team10.kubepractice.ru
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - hosts:
+            - grafana-team10.kubepractice.ru
+          secretName: tls-secret
+
+# Конфигурация Vault для секретов
+# ВАЖНО: Все чувствительные данные (пароли, секреты) должны храниться в Vault
+# Установите vault.enabled: true для использования Vault
+vault:
+  enabled: true
+  server: https://vault.kubepractice.ru
+  path: secret
+  version: v2
+  refreshInterval: 1h
+  auth:
+    mountPath: kubernetes
+    role: team10
+  postgresql:
+    path: team10/postgresql
+  jwt:
+    path: team10/jwt
+  grafana:
+    path: team10/grafana
+
 # Конфигурации сервисов
 services:
   auth-service:
@@ -77,9 +217,11 @@ services:
         cpu: 50m
         memory: 64Mi
     jwt:
-      secret: changeme-in-prod  # Должен быть в Secret
-      issuer: tensor-talks-auth
-      audience: tensor-talks-services
+      # ВАЖНО: Если vault.enabled = true, все значения берутся из Vault через External Secrets
+      # Значения из Vault: team10/jwt (secret, issuer, audience)
+      secret: ""  # Берется из Vault если vault.enabled = true
+      issuer: tensor-talks-auth  # Берется из Vault если vault.enabled = true
+      audience: tensor-talks-services  # Берется из Vault если vault.enabled = true
       accessTokenTTL: 15m
       refreshTokenTTL: 720h
 

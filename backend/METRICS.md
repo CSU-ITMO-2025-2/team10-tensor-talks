@@ -299,14 +299,22 @@ def after_request(response):
 
 ### Доступ к Grafana
 
-1. Откройте Grafana: `http://localhost:3000`
-2. Логин: `admin`, пароль: `admin` (измените в проде!)
+В Kubernetes:
+```bash
+kubectl port-forward -n team10-ns svc/tensor-talks-grafana 3000:3000 --kubeconfig team10-kubeconfig.yaml
+```
+
+Затем откройте в браузере: http://localhost:3000
+
+Логин: `admin`, пароль: `admin` (измените в проде!)
 
 ### Настройка Prometheus как источника данных
 
+Prometheus автоматически настроен как источник данных в Grafana через ConfigMap. Если нужно настроить вручную:
+
 1. В Grafana: **Configuration** → **Data Sources** → **Add data source**
 2. Выберите **Prometheus**
-3. URL: `http://prometheus:9090`
+3. URL: `http://tensor-talks-prometheus:9090` (внутри кластера) или `http://localhost:9090` (через port-forward)
 4. Нажмите **Save & Test**
 
 ### Создание дашборда
@@ -352,7 +360,22 @@ up{job="auth-service"}
 
 ## Конфигурация Prometheus
 
-Prometheus собирает метрики из всех микросервисов. Конфигурация в `prometheus.yml`:
+### В Kubernetes
+
+Prometheus развертывается в namespace `team10-ns` и автоматически собирает метрики из всех микросервисов через:
+- Статическую конфигурацию в ConfigMap
+- ServiceMonitor для автоматического обнаружения сервисов с аннотацией `prometheus.io/scrape: "true"`
+
+Доступ к Prometheus:
+```bash
+kubectl port-forward -n team10-ns svc/tensor-talks-prometheus 9090:9090
+```
+
+Затем откройте в браузере: http://localhost:9090
+
+### Локальная разработка (Docker Compose)
+
+Конфигурация в `prometheus.yml`:
 
 ```yaml
 global:
