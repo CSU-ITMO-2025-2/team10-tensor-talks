@@ -182,3 +182,20 @@ team10-kubeconfig.yaml
 # Local development
 local/
 .local/
+
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+# Test binary, built with `go test -c`
+*.test
+# Output of the go coverage tool
+*.out
+# Go workspace file
+go.work
+# Compiled binaries (without extension)
+backend/*/bff-service
+backend/*/*-service
+backend/*/*-service.exe
