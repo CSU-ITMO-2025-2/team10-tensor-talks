@@ -39,11 +39,11 @@ kafka:
   controller:
     resources:
       requests:
-        cpu: 200m
-        memory: 512Mi
+        cpu: 128m
+        memory: 256Mi
       limits:
-        cpu: 500m
-        memory: 1Gi
+        cpu: 256m
+        memory: 512Gi
   broker:
     replicas: 1  # Минимальная конфигурация для тестового окружения
     resources:
