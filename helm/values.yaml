@@ -446,7 +446,7 @@ ingress:
 # Если прав нет, установите enabled: false и попросите администратора создать ServiceMonitor вручную
 serviceMonitor:
   enabled: true
-  namespace: monitoring
+  namespace: team10-ns
   interval: 60s  # Увеличено до 60s для снижения нагрузки на общий Prometheus
   scrapeTimeout: 10s
   # Ограничения для предотвращения засорения общих систем
