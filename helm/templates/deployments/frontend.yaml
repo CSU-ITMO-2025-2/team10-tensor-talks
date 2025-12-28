@@ -63,7 +63,6 @@ spec:
         - name: frontend
           image: "{{ .Values.global.imageRegistry }}/{{ (index .Values.services "frontend").image.repository }}:{{ (index .Values.services "frontend").image.tag }}"
           imagePullPolicy: Always
-          command: ["nginx", "-g", "pid /tmp/nginx.pid; daemon off;"]
           securityContext:
             runAsUser: 101
             runAsGroup: 101
