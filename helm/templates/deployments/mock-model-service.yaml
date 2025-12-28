@@ -1,4 +1,4 @@
-{{- if .Values.services.mock-model-service.enabled }}
+{{- if (index .Values.services "mock-model-service").enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +8,7 @@ metadata:
     {{- include "tensor-talks.labels" . | nindent 4 }}
     app.kubernetes.io/component: mock-model-service
 spec:
-  replicas: {{ .Values.services.mock-model-service.replicaCount }}
+  replicas: {{ (index .Values.services "mock-model-service").replicaCount }}
   selector:
     matchLabels:
       {{- include "tensor-talks.selectorLabels" . | nindent 6 }}
@@ -30,7 +30,7 @@ spec:
         {{- toYaml .Values.securityContext | nindent 8 }}
       containers:
         - name: mock-model-service
-          image: "{{ .Values.global.imageRegistry }}/{{ .Values.services.mock-model-service.image.repository }}:{{ .Values.services.mock-model-service.image.tag }}"
+          image: "{{ .Values.global.imageRegistry }}/{{ (index .Values.services "mock-model-service").image.repository }}:{{ (index .Values.services "mock-model-service").image.tag }}"
           imagePullPolicy: Always
           ports:
             - name: http
@@ -80,6 +80,6 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           resources:
-            {{- toYaml .Values.services.mock-model-service.resources | nindent 12 }}
+            {{- toYaml (index .Values.services "mock-model-service").resources | nindent 12 }}
 {{- end }}
 

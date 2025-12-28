@@ -1,4 +1,4 @@
-{{- if .Values.services.knowledge-base-crud-service.enabled }}
+{{- if (index .Values.services "knowledge-base-crud-service").enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +8,7 @@ metadata:
     {{- include "tensor-talks.labels" . | nindent 4 }}
     app.kubernetes.io/component: knowledge-base-crud-service
 spec:
-  replicas: {{ .Values.services.knowledge-base-crud-service.replicaCount }}
+  replicas: {{ (index .Values.services "knowledge-base-crud-service").replicaCount }}
   selector:
     matchLabels:
       {{- include "tensor-talks.selectorLabels" . | nindent 6 }}
@@ -30,7 +30,7 @@ spec:
         {{- toYaml .Values.securityContext | nindent 8 }}
       containers:
         - name: knowledge-base-crud-service
-          image: "{{ .Values.global.imageRegistry }}/{{ .Values.services.knowledge-base-crud-service.image.repository }}:{{ .Values.services.knowledge-base-crud-service.image.tag }}"
+          image: "{{ .Values.global.imageRegistry }}/{{ (index .Values.services "knowledge-base-crud-service").image.repository }}:{{ (index .Values.services "knowledge-base-crud-service").image.tag }}"
           imagePullPolicy: Always
           ports:
             - name: http
@@ -72,7 +72,7 @@ spec:
                   name: {{ include "tensor-talks.fullname" . }}-postgres
                   key: sslmode
             - name: KNOWLEDGE_BASE_CRUD_DATABASE_SCHEMA
-              value: {{ .Values.services.knowledge-base-crud-service.database.schema | quote }}
+              value: {{ (index .Values.services "knowledge-base-crud-service").database.schema | quote }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -90,6 +90,6 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           resources:
-            {{- toYaml .Values.services.knowledge-base-crud-service.resources | nindent 12 }}
+            {{- toYaml (index .Values.services "knowledge-base-crud-service").resources | nindent 12 }}
 {{- end }}
 

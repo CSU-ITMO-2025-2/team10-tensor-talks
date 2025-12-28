@@ -1,4 +1,4 @@
-{{- if and .Values.services.frontend.enabled .Values.ingress.enabled }}
+{{- if and (index .Values.services "frontend").enabled .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

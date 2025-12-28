@@ -1,4 +1,4 @@
-{{- if .Values.services.questions-crud-service.enabled }}
+{{- if (index .Values.services "questions-crud-service").enabled }}
 apiVersion: v1
 kind: Service
 metadata:

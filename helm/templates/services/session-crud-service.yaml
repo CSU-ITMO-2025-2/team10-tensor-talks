@@ -1,4 +1,4 @@
-{{- if .Values.services.session-crud-service.enabled }}
+{{- if (index .Values.services "session-crud-service").enabled }}
 apiVersion: v1
 kind: Service
 metadata:

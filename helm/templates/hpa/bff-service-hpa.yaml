@@ -1,4 +1,4 @@
-{{- if and .Values.services.bff-service.enabled .Values.services.bff-service.autoscaling.enabled }}
+{{- if and (index .Values.services "bff-service").enabled (index .Values.services "bff-service").autoscaling.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -12,24 +12,24 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "tensor-talks.fullname" . }}-bff-service
-  minReplicas: {{ .Values.services.bff-service.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.services.bff-service.autoscaling.maxReplicas }}
+  minReplicas: {{ (index .Values.services "bff-service").autoscaling.minReplicas }}
+  maxReplicas: {{ (index .Values.services "bff-service").autoscaling.maxReplicas }}
   metrics:
-    {{- if .Values.services.bff-service.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if (index .Values.services "bff-service").autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.services.bff-service.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ (index .Values.services "bff-service").autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
-    {{- if .Values.services.bff-service.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- if (index .Values.services "bff-service").autoscaling.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.services.bff-service.autoscaling.targetMemoryUtilizationPercentage }}
+          averageUtilization: {{ (index .Values.services "bff-service").autoscaling.targetMemoryUtilizationPercentage }}
     {{- end }}
 {{- end }}
 

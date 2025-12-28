@@ -1,4 +1,4 @@
-{{- if .Values.services.frontend.enabled }}
+{{- if (index .Values.services "frontend").enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

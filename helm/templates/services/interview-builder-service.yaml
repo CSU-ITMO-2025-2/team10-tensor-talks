@@ -1,4 +1,4 @@
-{{- if .Values.services.interview-builder-service.enabled }}
+{{- if (index .Values.services "interview-builder-service").enabled }}
 apiVersion: v1
 kind: Service
 metadata:

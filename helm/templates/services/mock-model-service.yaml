@@ -1,4 +1,4 @@
-{{- if .Values.services.mock-model-service.enabled }}
+{{- if (index .Values.services "mock-model-service").enabled }}
 apiVersion: v1
 kind: Service
 metadata:

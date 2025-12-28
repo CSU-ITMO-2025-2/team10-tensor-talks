@@ -1,4 +1,4 @@
-{{- if and .Values.services.session-service.enabled .Values.services.session-service.autoscaling.enabled }}
+{{- if and (index .Values.services "session-service").enabled (index .Values.services "session-service").autoscaling.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -12,24 +12,24 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "tensor-talks.fullname" . }}-session-service
-  minReplicas: {{ .Values.services.session-service.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.services.session-service.autoscaling.maxReplicas }}
+  minReplicas: {{ (index .Values.services "session-service").autoscaling.minReplicas }}
+  maxReplicas: {{ (index .Values.services "session-service").autoscaling.maxReplicas }}
   metrics:
-    {{- if .Values.services.session-service.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if (index .Values.services "session-service").autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.services.session-service.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ (index .Values.services "session-service").autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
-    {{- if .Values.services.session-service.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- if (index .Values.services "session-service").autoscaling.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.services.session-service.autoscaling.targetMemoryUtilizationPercentage }}
+          averageUtilization: {{ (index .Values.services "session-service").autoscaling.targetMemoryUtilizationPercentage }}
     {{- end }}
 {{- end }}
 

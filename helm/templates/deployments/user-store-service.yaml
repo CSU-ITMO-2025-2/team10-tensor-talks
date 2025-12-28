@@ -1,4 +1,4 @@
-{{- if .Values.services.user-store-service.enabled }}
+{{- if (index .Values.services "user-store-service").enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +8,7 @@ metadata:
     {{- include "tensor-talks.labels" . | nindent 4 }}
     app.kubernetes.io/component: user-store-service
 spec:
-  replicas: {{ .Values.services.user-store-service.replicaCount }}
+  replicas: {{ (index .Values.services "user-store-service").replicaCount }}
   selector:
     matchLabels:
       {{- include "tensor-talks.selectorLabels" . | nindent 6 }}
@@ -24,7 +24,7 @@ spec:
         {{- toYaml .Values.securityContext | nindent 8 }}
       containers:
         - name: user-store-service
-          image: "{{ .Values.global.imageRegistry }}/{{ .Values.services.user-store-service.image.repository }}:{{ .Values.services.user-store-service.image.tag }}"
+          image: "{{ .Values.global.imageRegistry }}/{{ (index .Values.services "user-store-service").image.repository }}:{{ (index .Values.services "user-store-service").image.tag }}"
           imagePullPolicy: Always
           ports:
             - name: http
@@ -62,7 +62,7 @@ spec:
                   name: {{ include "tensor-talks.fullname" . }}-postgres
                   key: sslmode
             - name: USER_STORE_DATABASE_SCHEMA
-              value: {{ .Values.services.user-store-service.database.schema | quote }}
+              value: {{ (index .Values.services "user-store-service").database.schema | quote }}
             - name: USER_STORE_SERVER_HOST
               value: "0.0.0.0"
             - name: USER_STORE_SERVER_PORT
@@ -84,6 +84,6 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           resources:
-            {{- toYaml .Values.services.user-store-service.resources | nindent 12 }}
+            {{- toYaml (index .Values.services "user-store-service").resources | nindent 12 }}
 {{- end }}
 

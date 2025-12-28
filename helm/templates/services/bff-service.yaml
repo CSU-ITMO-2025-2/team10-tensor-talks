@@ -1,4 +1,4 @@
-{{- if .Values.services.bff-service.enabled }}
+{{- if (index .Values.services "bff-service").enabled }}
 apiVersion: v1
 kind: Service
 metadata:

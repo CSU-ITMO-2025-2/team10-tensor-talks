@@ -1,4 +1,4 @@
-{{- if .Values.services.bff-service.enabled }}
+{{- if (index .Values.services "bff-service").enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +8,7 @@ metadata:
     {{- include "tensor-talks.labels" . | nindent 4 }}
     app.kubernetes.io/component: bff-service
 spec:
-  replicas: {{ .Values.services.bff-service.replicaCount }}
+  replicas: {{ (index .Values.services "bff-service").replicaCount }}
   selector:
     matchLabels:
       {{- include "tensor-talks.selectorLabels" . | nindent 6 }}
@@ -30,7 +30,7 @@ spec:
         {{- toYaml .Values.securityContext | nindent 8 }}
       containers:
         - name: bff-service
-          image: "{{ .Values.global.imageRegistry }}/{{ .Values.services.bff-service.image.repository }}:{{ .Values.services.bff-service.image.tag }}"
+          image: "{{ .Values.global.imageRegistry }}/{{ (index .Values.services "bff-service").image.repository }}:{{ (index .Values.services "bff-service").image.tag }}"
           imagePullPolicy: Always
           ports:
             - name: http
@@ -88,6 +88,6 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           resources:
-            {{- toYaml .Values.services.bff-service.resources | nindent 12 }}
+            {{- toYaml (index .Values.services "bff-service").resources | nindent 12 }}
 {{- end }}
 

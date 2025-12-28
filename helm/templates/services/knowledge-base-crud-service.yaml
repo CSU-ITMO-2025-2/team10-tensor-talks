@@ -1,4 +1,4 @@
-{{- if .Values.services.knowledge-base-crud-service.enabled }}
+{{- if (index .Values.services "knowledge-base-crud-service").enabled }}
 apiVersion: v1
 kind: Service
 metadata:
