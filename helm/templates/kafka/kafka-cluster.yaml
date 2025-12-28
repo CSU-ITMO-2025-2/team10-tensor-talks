@@ -33,14 +33,6 @@ spec:
       log.retention.hours: {{ .Values.kafka.config.retentionHours | default 72 }}
       log.segment.bytes: 1073741824  # 1GB
       num.partitions: {{ .Values.kafka.topics.partitions | default 3 }}
-    storage:
-      type: jbod
-      volumes:
-        - id: 0
-          type: persistent-claim
-          size: {{ .Values.kafka.storage.size | default "5Gi" }}
-          class: {{ .Values.kafka.storage.class | default "standard" }}
-          deleteClaim: false
     resources:
       requests:
         cpu: {{ .Values.kafka.broker.resources.requests.cpu | default "500m" }}
