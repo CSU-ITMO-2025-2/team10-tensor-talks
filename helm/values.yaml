@@ -31,7 +31,7 @@ kafka:
   deployment:
     enabled: true
   # Bootstrap server для подключения сервисов
-  bootstrapServers: team10-kafka-bootstrap.team10-ns.svc.cluster.local:9092
+  bootstrapServers: team10-kafka-kafka-bootstrap.team10-ns.svc.cluster.local:9092
   # Версия Kafka
   version: 4.1.1
   metadataVersion: 4.1-IV1
