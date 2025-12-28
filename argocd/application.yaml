@@ -22,8 +22,8 @@ spec:
       prune: true
       selfHeal: true
       allowEmpty: false
-    syncOptions:
-      - CreateNamespace=true
+    #syncOptions:
+    #  - CreateNamespace=true
     retry:
       limit: 5
       backoff:
