@@ -45,19 +45,19 @@ spec:
             {{- toYaml .Values.kafka.ui.resources | nindent 12 }}
           livenessProbe:
             httpGet:
-              path: /
+              path: /actuator/health
               port: http
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 10
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /
+              path: /actuator/health
               port: http
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
+            initialDelaySeconds: 90
+            periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 3
 {{- end }}
 
