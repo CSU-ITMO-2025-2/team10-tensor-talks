@@ -43,7 +43,7 @@ kafka:
         memory: 256Mi
       limits:
         cpu: 256m
-        memory: 512Gi
+        memory: 512Mi
   broker:
     replicas: 1  # Минимальная конфигурация для тестового окружения
     resources:
