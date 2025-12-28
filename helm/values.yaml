@@ -1,5 +1,6 @@
 # Значения по умолчанию для tensor-talks
 # Это YAML-форматированный файл.
+createNamespace: false
 
 # Глобальные настройки
 global:
