@@ -40,8 +40,6 @@ spec:
               mkdir -p /var/cache/nginx/fastcgi_temp
               mkdir -p /var/cache/nginx/uwsgi_temp
               mkdir -p /var/cache/nginx/scgi_temp
-              mkdir -p /var/log/nginx
-              # fsGroup автоматически установит права, chown не нужен
           securityContext:
             runAsNonRoot: true
             runAsUser: 101
