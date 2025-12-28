@@ -417,6 +417,7 @@ services:
     image:
       repository: ghcr.io/csu-itmo-2025-2/team10-tensor-talks-frontend
       tag: latest
+    containerPort: 8080
     replicaCount: 1
     resources:
       limits:
