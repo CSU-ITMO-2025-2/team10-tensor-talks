@@ -6,10 +6,10 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: team10
   source:
     repoURL: https://github.com/CSU-ITMO-2025-2/team10-tensor-talks
-    targetRevision: main
+    targetRevision: Kuber
     path: helm
     helm:
       valueFiles:

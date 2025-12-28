@@ -58,7 +58,7 @@ data:
             "targets": [
               {
                 "expr": "rate(http_requests_total{team=\"team10\", namespace=\"team10-ns\"}[5m])",
-                "legendFormat": "{{service}}"
+                "legendFormat": "{{ "{{service}}" }}"
               }
             ]
           },
@@ -70,7 +70,7 @@ data:
             "targets": [
               {
                 "expr": "rate(http_requests_total{team=\"team10\", namespace=\"team10-ns\", status=~\"5..\"}[5m])",
-                "legendFormat": "{{service}}"
+                "legendFormat": "{{ "{{service}}" }}"
               }
             ]
           },
@@ -82,7 +82,7 @@ data:
             "targets": [
               {
                 "expr": "rate(container_cpu_usage_seconds_total{team=\"team10\", namespace=\"team10-ns\"}[5m])",
-                "legendFormat": "{{pod}}"
+                "legendFormat": "{{ "{{pod}}" }}"
               }
             ]
           },
@@ -94,7 +94,7 @@ data:
             "targets": [
               {
                 "expr": "container_memory_usage_bytes{team=\"team10\", namespace=\"team10-ns\"}",
-                "legendFormat": "{{pod}}"
+                "legendFormat": "{{ "{{pod}}" }}"
               }
             ]
           }
