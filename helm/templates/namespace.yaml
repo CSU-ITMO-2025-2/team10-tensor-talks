@@ -1,3 +1,4 @@
+{{- if .Values.createNamespace }}
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -5,4 +6,4 @@ metadata:
   labels:
     {{- include "tensor-talks.labels" . | nindent 4 }}
     istio-injection: enabled
-
+{{- end }}
