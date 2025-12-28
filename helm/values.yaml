@@ -10,7 +10,7 @@ global:
   # Метки для изоляции в общем мониторинге
   labels:
     team: team10
-    project: tensor-talks
+    project: team10-tensor-talks
 
 # Конфигурация PostgreSQL (общая база данных)
 postgresql:
