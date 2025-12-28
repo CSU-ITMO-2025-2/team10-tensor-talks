@@ -189,7 +189,7 @@ monitoring:
 vault:
   enabled: true
   server: https://vault.kubepractice.ru
-  path: secret
+  path: kv
   version: v2
   refreshInterval: 1h
   auth:
