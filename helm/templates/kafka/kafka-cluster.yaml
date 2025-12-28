@@ -12,7 +12,6 @@ spec:
   kafka:
     version: {{ .Values.kafka.version | default "4.1.1" }}
     metadataVersion: {{ .Values.kafka.metadataVersion | default "4.1-IV1" }}
-    replicas: {{ .Values.kafka.broker.replicas | default 1 }}
     listeners:
       - name: plain
         port: 9092
@@ -33,13 +32,6 @@ spec:
       log.retention.hours: {{ .Values.kafka.config.retentionHours | default 72 }}
       log.segment.bytes: 1073741824  # 1GB
       num.partitions: {{ .Values.kafka.topics.partitions | default 3 }}
-    resources:
-      requests:
-        cpu: {{ .Values.kafka.broker.resources.requests.cpu | default "500m" }}
-        memory: {{ .Values.kafka.broker.resources.requests.memory | default "1Gi" }}
-      limits:
-        cpu: {{ .Values.kafka.broker.resources.limits.cpu | default "1" }}
-        memory: {{ .Values.kafka.broker.resources.limits.memory | default "2Gi" }}
   entityOperator:
     topicOperator:
       resources:

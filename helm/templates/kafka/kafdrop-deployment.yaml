@@ -23,13 +23,20 @@ spec:
         - name: kafdrop
           image: {{ .Values.kafka.ui.image.repository }}:{{ .Values.kafka.ui.image.tag }}
           imagePullPolicy: {{ .Values.kafka.ui.image.pullPolicy | default "IfNotPresent" }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: http
               containerPort: {{ .Values.kafka.ui.port | default 9000 }}
               protocol: TCP
           env:
             - name: KAFKA_BROKERCONNECT
-              value: {{ .Values.kafka.bootstrapServers | quote }}
+              value: "team10-kafka-kafka-bootstrap:9092"
             - name: SERVER_PORT
               value: {{ .Values.kafka.ui.port | default "9000" | quote }}
             - name: JVM_OPTS
