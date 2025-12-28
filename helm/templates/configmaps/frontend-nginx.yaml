@@ -9,6 +9,8 @@ metadata:
     app.kubernetes.io/component: frontend
 data:
   nginx.conf: |
+    pid /tmp/nginx.pid;
+    
     server {
         listen 8080;
         server_name _;
