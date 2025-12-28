@@ -1,4 +1,4 @@
-{{- if .Values.services.user-store-service.enabled }}
+{{- if .Values.services."user-store-service".enabled }}
 apiVersion: v1
 kind: Service
 metadata:
