@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: tensor-talks
+  name: team10-tensor-talks
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
