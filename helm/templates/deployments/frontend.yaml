@@ -23,11 +23,45 @@ spec:
     spec:
       serviceAccountName: {{ include "tensor-talks.serviceAccountName" . }}
       securityContext:
-        {{- toYaml .Values.securityContext | nindent 8 }}
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+      initContainers:
+        - name: nginx-init
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /var/cache/nginx/client_temp
+              mkdir -p /var/cache/nginx/proxy_temp
+              mkdir -p /var/cache/nginx/fastcgi_temp
+              mkdir -p /var/cache/nginx/uwsgi_temp
+              mkdir -p /var/cache/nginx/scgi_temp
+              chown -R 101:101 /var/cache/nginx
+              chmod -R 755 /var/cache/nginx
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
       containers:
         - name: frontend
           image: "{{ .Values.global.imageRegistry }}/{{ (index .Values.services "frontend").image.repository }}:{{ (index .Values.services "frontend").image.tag }}"
           imagePullPolicy: Always
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - SETGID
+                - SETUID
           ports:
             - name: http
               containerPort: 80
@@ -52,11 +86,15 @@ spec:
             - name: nginx-config
               mountPath: /etc/nginx/conf.d/default.conf
               subPath: nginx.conf
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
           resources:
             {{- toYaml (index .Values.services "frontend").resources | nindent 12 }}
       volumes:
         - name: nginx-config
           configMap:
             name: {{ include "tensor-talks.fullname" . }}-frontend-nginx
+        - name: nginx-cache
+          emptyDir: {}
 {{- end }}
 
