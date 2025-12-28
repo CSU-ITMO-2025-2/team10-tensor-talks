@@ -10,10 +10,10 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - port: 8082
+    - name: http
+      port: 8082
       targetPort: http
       protocol: TCP
-      name: http
   selector:
     {{- include "tensor-talks.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: user-store-service
